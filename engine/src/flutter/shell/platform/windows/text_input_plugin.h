@@ -5,6 +5,8 @@
 #ifndef FLUTTER_SHELL_PLATFORM_WINDOWS_TEXT_INPUT_PLUGIN_H_
 #define FLUTTER_SHELL_PLATFORM_WINDOWS_TEXT_INPUT_PLUGIN_H_
 
+#include <windows.h>
+
 #include <array>
 #include <map>
 #include <memory>
@@ -76,10 +78,15 @@ class TextInputPlugin {
 
   // Called when a view is removed from the engine.
   //
-  // If the removed view is the currently active view for text input, resets
-  // the active model and view id to prevent stale references. The implicit
-  // view is excluded from this reset.
+  // If the removed view is the currently active view for text input, dismisses
+  // the on-screen keyboard and resets the active model and view id to prevent
+  // stale references. The implicit view is excluded from this reset.
   void OnViewRemoved(FlutterViewId view_id);
+
+  // Records the device kind of the most recent pointer event.
+  //
+  // |TextInput.show| requests the on-screen keyboard only for touch or pen.
+  void SetLastPointerKind(FlutterPointerDeviceKind device_kind);
 
   // The on-screen keyboard, if one was injected.
   OnScreenKeyboard* on_screen_keyboard() const { return on_screen_keyboard_; }
@@ -107,6 +114,22 @@ class TextInputPlugin {
   // cursor rect in the PipelineOwner root coordinate system.
   Rect GetCursorRect() const;
 
+  // HWND of the active text-input view, or null if the view is missing.
+  HWND GetClientWindowHandle() const;
+
+  // Whether |hwnd| currently has Win32 focus.
+  bool ClientWindowHasFocus(HWND hwnd) const;
+
+  // Requests the on-screen keyboard if a client is attached, the last pointer
+  // was touch or pen, and the client HWND has focus.
+  void MaybeDisplayOnScreenKeyboard();
+
+  // Dismisses the on-screen keyboard if no text client is attached.
+  void MaybeDismissOnScreenKeyboard();
+
+  // Dismisses the on-screen keyboard for the active client view, if any.
+  void DismissOnScreenKeyboard();
+
   // The MethodChannel used for communication with the Flutter engine.
   std::unique_ptr<flutter::MethodChannel<rapidjson::Document>> channel_;
 
@@ -115,8 +138,17 @@ class TextInputPlugin {
 
   // The on-screen keyboard used to show and hide the Windows touch keyboard.
   //
-  // May be null in tests. Display/Dismiss is wired by a follow-up.
+  // May be null in tests.
   OnScreenKeyboard* on_screen_keyboard_ = nullptr;
+
+  // Device kind of the last pointer event. Mouse/unknown does not Display.
+  FlutterPointerDeviceKind last_pointer_kind_ =
+      kFlutterPointerDeviceKindMouse;
+
+  // When true, |ClientWindowHasFocus| uses |window_has_focus_override_|
+  // instead of GetFocus(). Tests set this via TextInputPluginModifier.
+  bool has_window_focus_override_ = false;
+  bool window_has_focus_override_ = false;
 
   // The active client id.
   int client_id_;

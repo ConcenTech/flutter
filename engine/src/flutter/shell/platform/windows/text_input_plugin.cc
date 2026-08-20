@@ -13,6 +13,7 @@
 #include "flutter/shell/platform/common/text_editing_delta.h"
 #include "flutter/shell/platform/windows/flutter_windows_engine.h"
 #include "flutter/shell/platform/windows/flutter_windows_view.h"
+#include "flutter/shell/platform/windows/on_screen_keyboard.h"
 
 static constexpr char kSetEditingStateMethod[] = "TextInput.setEditingState";
 static constexpr char kClearClientMethod[] = "TextInput.clearClient";
@@ -216,8 +217,10 @@ void TextInputPlugin::HandleMethodCall(
     std::unique_ptr<flutter::MethodResult<rapidjson::Document>> result) {
   const std::string& method = method_call.method_name();
 
-  if (method.compare(kShowMethod) == 0 || method.compare(kHideMethod) == 0) {
-    // These methods are no-ops.
+  if (method.compare(kShowMethod) == 0) {
+    MaybeDisplayOnScreenKeyboard();
+  } else if (method.compare(kHideMethod) == 0) {
+    MaybeDismissOnScreenKeyboard();
   } else if (method.compare(kClearClientMethod) == 0) {
     FlutterWindowsView* view = engine_->view(view_id_);
     if (view == nullptr) {
@@ -504,10 +507,67 @@ void TextInputPlugin::EnterPressed(TextInputModel* model) {
   channel_->InvokeMethod(kPerformActionMethod, std::move(args));
 }
 
+void TextInputPlugin::SetLastPointerKind(FlutterPointerDeviceKind device_kind) {
+  last_pointer_kind_ = device_kind;
+}
+
+HWND TextInputPlugin::GetClientWindowHandle() const {
+  FlutterWindowsView* view = engine_->view(view_id_);
+  if (view == nullptr) {
+    return nullptr;
+  }
+  return view->GetWindowHandle();
+}
+
+bool TextInputPlugin::ClientWindowHasFocus(HWND hwnd) const {
+  if (hwnd == nullptr) {
+    return false;
+  }
+  if (has_window_focus_override_) {
+    return window_has_focus_override_;
+  }
+  return GetFocus() == hwnd;
+}
+
+static bool IsTouchOrPenPointer(FlutterPointerDeviceKind kind) {
+  return kind == kFlutterPointerDeviceKindTouch ||
+         kind == kFlutterPointerDeviceKindStylus ||
+         kind == kFlutterPointerDeviceKindInvertedStylus;
+}
+
+void TextInputPlugin::MaybeDisplayOnScreenKeyboard() {
+  if (on_screen_keyboard_ == nullptr || active_model_ == nullptr) {
+    return;
+  }
+  HWND hwnd = GetClientWindowHandle();
+  if (!IsTouchOrPenPointer(last_pointer_kind_) ||
+      !ClientWindowHasFocus(hwnd)) {
+    return;
+  }
+  on_screen_keyboard_->Display(hwnd);
+}
+
+void TextInputPlugin::MaybeDismissOnScreenKeyboard() {
+  if (active_model_ != nullptr) {
+    return;
+  }
+  DismissOnScreenKeyboard();
+}
+
+void TextInputPlugin::DismissOnScreenKeyboard() {
+  if (on_screen_keyboard_ == nullptr) {
+    return;
+  }
+  on_screen_keyboard_->Dismiss(GetClientWindowHandle());
+}
+
 void TextInputPlugin::OnViewRemoved(FlutterViewId view_id) {
   if (view_id == kImplicitViewId || view_id_ != view_id) {
     return;
   }
+
+  // Dismiss while the view is still registered so the HWND is valid.
+  DismissOnScreenKeyboard();
 
   // If composing, commit and end composing. Skip sending state updates and
   // IME reset since the view is being removed.

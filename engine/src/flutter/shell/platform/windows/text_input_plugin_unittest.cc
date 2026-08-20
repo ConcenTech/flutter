@@ -13,6 +13,7 @@
 #include "flutter/shell/platform/windows/flutter_windows_view.h"
 #include "flutter/shell/platform/windows/testing/engine_modifier.h"
 #include "flutter/shell/platform/windows/testing/flutter_windows_engine_builder.h"
+#include "flutter/shell/platform/windows/testing/mock_on_screen_keyboard.h"
 #include "flutter/shell/platform/windows/testing/mock_window_binding_handler.h"
 #include "flutter/shell/platform/windows/testing/test_binary_messenger.h"
 #include "flutter/shell/platform/windows/testing/windows_test.h"
@@ -34,6 +35,11 @@ class TextInputPluginModifier {
 
   bool HasActiveModel() { return text_input_plugin->active_model_ != nullptr; }
 
+  void SetWindowHasFocus(bool has_focus) {
+    text_input_plugin->has_window_focus_override_ = true;
+    text_input_plugin->window_has_focus_override_ = has_focus;
+  }
+
  private:
   TextInputPlugin* text_input_plugin;
 
@@ -43,6 +49,8 @@ class TextInputPluginModifier {
 namespace testing {
 
 namespace {
+using ::testing::_;
+using ::testing::NiceMock;
 using ::testing::Return;
 
 static constexpr char kScanCodeKey[] = "scanCode";
@@ -55,7 +63,13 @@ static constexpr char kChannelName[] = "flutter/textinput";
 static constexpr char kEnableDeltaModel[] = "enableDeltaModel";
 static constexpr char kViewId[] = "viewId";
 static constexpr char kSetClientMethod[] = "TextInput.setClient";
+static constexpr char kShowMethod[] = "TextInput.show";
+static constexpr char kHideMethod[] = "TextInput.hide";
+static constexpr char kClearClientMethod[] = "TextInput.clearClient";
 static constexpr char kAffinityDownstream[] = "TextAffinity.downstream";
+static HWND DummyHwnd() {
+  return reinterpret_cast<HWND>(1);
+}
 static constexpr char kTextKey[] = "text";
 static constexpr char kSelectionBaseKey[] = "selectionBase";
 static constexpr char kSelectionExtentKey[] = "selectionExtent";
@@ -125,6 +139,25 @@ static std::unique_ptr<rapidjson::Document> EncodedEditingState(
   return arguments;
 }
 
+static void SimulateTextInputMethod(TestBinaryMessenger& messenger,
+                                    const char* method) {
+  auto& codec = JsonMethodCodec::GetInstance();
+  auto message = codec.EncodeMethodCall({method, nullptr});
+  BinaryReply reply_handler = [](const uint8_t* reply, size_t reply_size) {};
+  messenger.SimulateEngineMessage(kChannelName, message->data(),
+                                  message->size(), reply_handler);
+}
+
+static void SimulateSetClient(TestBinaryMessenger& messenger) {
+  auto& codec = JsonMethodCodec::GetInstance();
+  auto message = codec.EncodeMethodCall(
+      {kSetClientMethod,
+       EncodedClientConfig("TextInputType.text", "TextInputAction.done")});
+  BinaryReply reply_handler = [](const uint8_t* reply, size_t reply_size) {};
+  messenger.SimulateEngineMessage(kChannelName, message->data(),
+                                  message->size(), reply_handler);
+}
+
 class MockFlutterWindowsView : public FlutterWindowsView {
  public:
   MockFlutterWindowsView(FlutterWindowsEngine* engine,
@@ -161,14 +194,14 @@ class TextInputPluginTest : public WindowsTest {
     engine_ = builder.Build();
   }
 
-  void UseEngineWithView() {
+  void UseEngineWithView(HWND hwnd = nullptr) {
     FlutterWindowsEngineBuilder builder{GetContext()};
 
     auto window = std::make_unique<MockWindowBindingHandler>();
 
     window_ = window.get();
     EXPECT_CALL(*window_, SetView).Times(1);
-    EXPECT_CALL(*window, GetWindowHandle).WillRepeatedly(Return(nullptr));
+    EXPECT_CALL(*window, GetWindowHandle).WillRepeatedly(Return(hwnd));
 
     engine_ = builder.Build();
     view_ = std::make_unique<MockFlutterWindowsView>(engine_.get(),
@@ -876,6 +909,154 @@ TEST_F(TextInputPluginTest, OnViewRemovedIgnoresImplicitView) {
   // State should be unchanged for the implicit view.
   EXPECT_TRUE(modifier.HasActiveModel());
   EXPECT_EQ(modifier.GetViewId(), kImplicitViewId);
+}
+
+TEST_F(TextInputPluginTest, ShowWithTouchDisplaysKeyboard) {
+  UseEngineWithView(DummyHwnd());
+
+  TestBinaryMessenger messenger([](const std::string& channel,
+                                   const uint8_t* message, size_t message_size,
+                                   BinaryReply reply) {});
+  NiceMock<MockOnScreenKeyboard> keyboard;
+  TextInputPlugin handler(&messenger, engine(), &keyboard);
+  TextInputPluginModifier modifier(&handler);
+  modifier.SetWindowHasFocus(true);
+  handler.SetLastPointerKind(kFlutterPointerDeviceKindTouch);
+
+  EXPECT_CALL(keyboard, Display(DummyHwnd())).Times(1);
+
+  SimulateSetClient(messenger);
+  SimulateTextInputMethod(messenger, kShowMethod);
+}
+
+TEST_F(TextInputPluginTest, ShowWithMouseDoesNotDisplayKeyboard) {
+  UseEngineWithView(DummyHwnd());
+
+  TestBinaryMessenger messenger([](const std::string& channel,
+                                   const uint8_t* message, size_t message_size,
+                                   BinaryReply reply) {});
+  NiceMock<MockOnScreenKeyboard> keyboard;
+  TextInputPlugin handler(&messenger, engine(), &keyboard);
+  TextInputPluginModifier modifier(&handler);
+  modifier.SetWindowHasFocus(true);
+  handler.SetLastPointerKind(kFlutterPointerDeviceKindMouse);
+
+  EXPECT_CALL(keyboard, Display(_)).Times(0);
+
+  SimulateSetClient(messenger);
+  SimulateTextInputMethod(messenger, kShowMethod);
+}
+
+TEST_F(TextInputPluginTest, ShowWithoutClientDoesNotDisplayKeyboard) {
+  UseEngineWithView(DummyHwnd());
+
+  TestBinaryMessenger messenger([](const std::string& channel,
+                                   const uint8_t* message, size_t message_size,
+                                   BinaryReply reply) {});
+  NiceMock<MockOnScreenKeyboard> keyboard;
+  TextInputPlugin handler(&messenger, engine(), &keyboard);
+  TextInputPluginModifier modifier(&handler);
+  modifier.SetWindowHasFocus(true);
+  handler.SetLastPointerKind(kFlutterPointerDeviceKindTouch);
+
+  EXPECT_CALL(keyboard, Display(_)).Times(0);
+
+  SimulateTextInputMethod(messenger, kShowMethod);
+}
+
+TEST_F(TextInputPluginTest, ShowWithoutFocusDoesNotDisplayKeyboard) {
+  UseEngineWithView(DummyHwnd());
+
+  TestBinaryMessenger messenger([](const std::string& channel,
+                                   const uint8_t* message, size_t message_size,
+                                   BinaryReply reply) {});
+  NiceMock<MockOnScreenKeyboard> keyboard;
+  TextInputPlugin handler(&messenger, engine(), &keyboard);
+  TextInputPluginModifier modifier(&handler);
+  modifier.SetWindowHasFocus(false);
+  handler.SetLastPointerKind(kFlutterPointerDeviceKindTouch);
+
+  EXPECT_CALL(keyboard, Display(_)).Times(0);
+
+  SimulateSetClient(messenger);
+  SimulateTextInputMethod(messenger, kShowMethod);
+}
+
+TEST_F(TextInputPluginTest, ClearClientDoesNotDismissKeyboard) {
+  UseEngineWithView(DummyHwnd());
+
+  TestBinaryMessenger messenger([](const std::string& channel,
+                                   const uint8_t* message, size_t message_size,
+                                   BinaryReply reply) {});
+  NiceMock<MockOnScreenKeyboard> keyboard;
+  TextInputPlugin handler(&messenger, engine(), &keyboard);
+
+  EXPECT_CALL(*view(), OnResetImeComposing());
+  EXPECT_CALL(keyboard, Dismiss(_)).Times(0);
+
+  SimulateSetClient(messenger);
+  SimulateTextInputMethod(messenger, kClearClientMethod);
+}
+
+TEST_F(TextInputPluginTest, ClearClientThenHideDismissesKeyboard) {
+  UseEngineWithView(DummyHwnd());
+
+  TestBinaryMessenger messenger([](const std::string& channel,
+                                   const uint8_t* message, size_t message_size,
+                                   BinaryReply reply) {});
+  NiceMock<MockOnScreenKeyboard> keyboard;
+  TextInputPlugin handler(&messenger, engine(), &keyboard);
+
+  EXPECT_CALL(*view(), OnResetImeComposing());
+  EXPECT_CALL(keyboard, Dismiss(DummyHwnd())).Times(1);
+
+  SimulateSetClient(messenger);
+  SimulateTextInputMethod(messenger, kClearClientMethod);
+  SimulateTextInputMethod(messenger, kHideMethod);
+}
+
+TEST_F(TextInputPluginTest, HideWithClientDoesNotDismissKeyboard) {
+  UseEngineWithView(DummyHwnd());
+
+  TestBinaryMessenger messenger([](const std::string& channel,
+                                   const uint8_t* message, size_t message_size,
+                                   BinaryReply reply) {});
+  NiceMock<MockOnScreenKeyboard> keyboard;
+  TextInputPlugin handler(&messenger, engine(), &keyboard);
+
+  EXPECT_CALL(keyboard, Dismiss(_)).Times(0);
+
+  SimulateSetClient(messenger);
+  SimulateTextInputMethod(messenger, kHideMethod);
+}
+
+TEST_F(TextInputPluginTest, HideWithoutViewSucceeds) {
+  UseHeadlessEngine();
+
+  TestBinaryMessenger messenger([](const std::string& channel,
+                                   const uint8_t* message, size_t message_size,
+                                   BinaryReply reply) {});
+  NiceMock<MockOnScreenKeyboard> keyboard;
+  TextInputPlugin handler(&messenger, engine(), &keyboard);
+
+  EXPECT_CALL(keyboard, Dismiss(nullptr)).Times(1);
+
+  SimulateTextInputMethod(messenger, kHideMethod);
+}
+
+TEST_F(TextInputPluginTest, OnViewRemovedDismissesKeyboard) {
+  UseEngineWithView(DummyHwnd());
+
+  TestBinaryMessenger messenger([](const std::string& channel,
+                                   const uint8_t* message, size_t message_size,
+                                   BinaryReply reply) {});
+  NiceMock<MockOnScreenKeyboard> keyboard;
+  TextInputPlugin handler(&messenger, engine(), &keyboard);
+
+  EXPECT_CALL(keyboard, Dismiss(DummyHwnd())).Times(1);
+
+  SimulateSetClient(messenger);
+  handler.OnViewRemoved(456);
 }
 
 }  // namespace testing
