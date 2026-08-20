@@ -733,11 +733,15 @@ FlutterWindow::HandleMessage(UINT const message,
     }
     case WM_SETFOCUS:
       OnWindowStateEvent(WindowStateEvent::kFocus);
-      text_input_manager_->OnWindowFocusChanged(true);
+      if (text_input_manager_) {
+        text_input_manager_->OnWindowFocusChanged(true);
+      }
       break;
     case WM_KILLFOCUS:
       OnWindowStateEvent(WindowStateEvent::kUnfocus);
-      text_input_manager_->OnWindowFocusChanged(false);
+      if (text_input_manager_) {
+        text_input_manager_->OnWindowFocusChanged(false);
+      }
       break;
     case WM_LBUTTONDOWN:
     case WM_RBUTTONDOWN:
