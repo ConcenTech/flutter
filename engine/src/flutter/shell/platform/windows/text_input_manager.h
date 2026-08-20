@@ -40,7 +40,8 @@ class TextInputManager {
   // WM_IME_STARTCOMPOSITION events.
   void CreateImeWindow();
 
-  // Destroys the current IME window and system caret.
+  // Destroys the IME window. The system caret is kept if a text client is
+  // still attached.
   //
   // This method should be invoked in response to the WM_IME_ENDCOMPOSITION
   // event.
@@ -75,11 +76,25 @@ class TextInputManager {
   // be committed in the composing region when composition is ended.
   virtual std::optional<std::u16string> GetResultString() const;
 
-  /// Aborts IME composing.
+  /// Aborts IME composing and releases the text-client caret latch.
   ///
-  /// Aborts composing, closes the candidates window, and clears the contents
-  /// of the composing string.
+  /// Aborts composing, closes the candidates window, clears the composing
+  /// string, and destroys the system caret. Called from TextInput.clearClient.
   void AbortComposing();
+
+  // Recreates or destroys the system caret when the HWND gains or loses focus.
+  //
+  // The caret is restored only if a text client is attached or composing.
+  void OnWindowFocusChanged(bool focused);
+
+  // True if a system caret was created for this manager.
+  bool caret_created() const { return caret_created_; }
+
+  // True if IME-based composing is active.
+  bool ime_active() const { return ime_active_; }
+
+  // True if a Flutter text client has supplied a caret rect.
+  bool text_client_attached() const { return text_client_attached_; }
 
  private:
   // Returns either the composing string or result string based on the value of
@@ -90,11 +105,24 @@ class TextInputManager {
   // position.
   void MoveImeWindow(HIMC imm_context);
 
+  // Creates the system caret if it does not already exist.
+  void EnsureSystemCaret();
+
+  // Destroys the system caret if this manager created it.
+  void DestroySystemCaret();
+
   // The window with which the IME windows are associated.
   HWND window_handle_ = nullptr;
 
   // True if IME-based composing is active.
   bool ime_active_ = false;
+
+  // True if a Flutter text client is attached (caret rect received, not
+  // yet cleared).
+  bool text_client_attached_ = false;
+
+  // True if this manager currently owns a system caret.
+  bool caret_created_ = false;
 
   // The system caret rect.
   Rect caret_rect_ = {{0, 0}, {0, 0}};

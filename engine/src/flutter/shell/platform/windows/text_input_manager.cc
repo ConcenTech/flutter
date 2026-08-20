@@ -45,7 +45,27 @@ class ImmContext {
 };
 
 void TextInputManager::SetWindowHandle(HWND window_handle) {
+  if (window_handle_ != window_handle) {
+    DestroySystemCaret();
+  }
   window_handle_ = window_handle;
+}
+
+void TextInputManager::EnsureSystemCaret() {
+  if (caret_created_ || window_handle_ == nullptr) {
+    return;
+  }
+  if (::CreateCaret(window_handle_, nullptr, 1, 1)) {
+    caret_created_ = true;
+  }
+}
+
+void TextInputManager::DestroySystemCaret() {
+  if (!caret_created_) {
+    return;
+  }
+  ::DestroyCaret();
+  caret_created_ = false;
 }
 
 void TextInputManager::CreateImeWindow() {
@@ -56,10 +76,8 @@ void TextInputManager::CreateImeWindow() {
   // Some IMEs ignore calls to ::ImmSetCandidateWindow() and use the position of
   // the current system caret instead via ::GetCaretPos(). In order to behave
   // as expected with these IMEs, we create a temporary system caret.
-  if (!ime_active_) {
-    ::CreateCaret(window_handle_, nullptr, 1, 1);
-  }
   ime_active_ = true;
+  EnsureSystemCaret();
 
   // Set the position of the IME windows.
   UpdateImeWindow();
@@ -70,11 +88,10 @@ void TextInputManager::DestroyImeWindow() {
     return;
   }
 
-  // Destroy the system caret created in CreateImeWindow().
-  if (ime_active_) {
-    ::DestroyCaret();
-  }
   ime_active_ = false;
+  if (!text_client_attached_) {
+    DestroySystemCaret();
+  }
 }
 
 void TextInputManager::UpdateImeWindow() {
@@ -85,19 +102,25 @@ void TextInputManager::UpdateImeWindow() {
   ImmContext imm_context(window_handle_);
   if (imm_context.IsValid()) {
     MoveImeWindow(imm_context.get());
+  } else {
+    MoveImeWindow(nullptr);
   }
 }
 
 void TextInputManager::UpdateCaretRect(const Rect& rect) {
   caret_rect_ = rect;
+  text_client_attached_ = true;
 
   if (window_handle_ == nullptr) {
     return;
   }
 
+  EnsureSystemCaret();
   ImmContext imm_context(window_handle_);
   if (imm_context.IsValid()) {
     MoveImeWindow(imm_context.get());
+  } else {
+    MoveImeWindow(nullptr);
   }
 }
 
@@ -124,22 +147,42 @@ std::optional<std::u16string> TextInputManager::GetResultString() const {
 }
 
 void TextInputManager::AbortComposing() {
-  if (window_handle_ == nullptr || !ime_active_) {
+  if (window_handle_ == nullptr) {
+    text_client_attached_ = false;
+    ime_active_ = false;
+    DestroySystemCaret();
     return;
   }
 
-  ImmContext imm_context(window_handle_);
-  if (imm_context.IsValid()) {
-    // Cancel composing and close the candidates window.
-    ::ImmNotifyIME(imm_context.get(), NI_COMPOSITIONSTR, CPS_CANCEL, 0);
-    ::ImmNotifyIME(imm_context.get(), NI_CLOSECANDIDATE, 0, 0);
+  if (ime_active_) {
+    ImmContext imm_context(window_handle_);
+    if (imm_context.IsValid()) {
+      // Cancel composing and close the candidates window.
+      ::ImmNotifyIME(imm_context.get(), NI_COMPOSITIONSTR, CPS_CANCEL, 0);
+      ::ImmNotifyIME(imm_context.get(), NI_CLOSECANDIDATE, 0, 0);
 
-    // Clear the composing string.
-    wchar_t composition_str[] = L"";
-    wchar_t reading_str[] = L"";
-    ::ImmSetCompositionStringW(imm_context.get(), SCS_SETSTR, composition_str,
-                               sizeof(wchar_t), reading_str, sizeof(wchar_t));
+      // Clear the composing string.
+      wchar_t composition_str[] = L"";
+      wchar_t reading_str[] = L"";
+      ::ImmSetCompositionStringW(imm_context.get(), SCS_SETSTR, composition_str,
+                                 sizeof(wchar_t), reading_str, sizeof(wchar_t));
+    }
   }
+
+  ime_active_ = false;
+  text_client_attached_ = false;
+  DestroySystemCaret();
+}
+
+void TextInputManager::OnWindowFocusChanged(bool focused) {
+  if (focused) {
+    if (ime_active_ || text_client_attached_) {
+      EnsureSystemCaret();
+      UpdateImeWindow();
+    }
+    return;
+  }
+  DestroySystemCaret();
 }
 
 std::optional<std::u16string> TextInputManager::GetString(int type) const {
@@ -164,7 +207,7 @@ std::optional<std::u16string> TextInputManager::GetString(int type) const {
 }
 
 void TextInputManager::MoveImeWindow(HIMC imm_context) {
-  if (GetFocus() != window_handle_ || !ime_active_) {
+  if (GetFocus() != window_handle_ || !caret_created_) {
     return;
   }
   LONG left = caret_rect_.left();
@@ -172,6 +215,10 @@ void TextInputManager::MoveImeWindow(HIMC imm_context) {
   LONG right = caret_rect_.right();
   LONG bottom = caret_rect_.bottom();
   ::SetCaretPos(left, bottom);
+
+  if (imm_context == nullptr) {
+    return;
+  }
 
   // Set the position of composition text.
   COMPOSITIONFORM composition_form = {CFS_POINT, {left, top}};

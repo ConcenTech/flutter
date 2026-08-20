@@ -276,6 +276,7 @@ executable("flutter_windows_unittests") {
     "testing/windows_test_context.h",
     "testing/wm_builders.cc",
     "testing/wm_builders.h",
+    "text_input_manager_unittests.cc",
     "text_input_plugin_unittest.cc",
     "window_manager_unittests.cc",
     "window_proc_delegate_manager_unittests.cc",

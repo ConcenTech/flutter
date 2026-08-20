@@ -733,11 +733,11 @@ FlutterWindow::HandleMessage(UINT const message,
     }
     case WM_SETFOCUS:
       OnWindowStateEvent(WindowStateEvent::kFocus);
-      ::CreateCaret(window_handle_, nullptr, 1, 1);
+      text_input_manager_->OnWindowFocusChanged(true);
       break;
     case WM_KILLFOCUS:
       OnWindowStateEvent(WindowStateEvent::kUnfocus);
-      ::DestroyCaret();
+      text_input_manager_->OnWindowFocusChanged(false);
       break;
     case WM_LBUTTONDOWN:
     case WM_RBUTTONDOWN:
