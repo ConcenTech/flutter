@@ -88,12 +88,17 @@ class TextInputPlugin {
   // |TextInput.show| requests the on-screen keyboard only for touch or pen.
   void SetLastPointerKind(FlutterPointerDeviceKind device_kind);
 
+  FlutterPointerDeviceKind last_pointer_kind() const {
+    return last_pointer_kind_;
+  }
+
   // The on-screen keyboard, if one was injected.
   OnScreenKeyboard* on_screen_keyboard() const { return on_screen_keyboard_; }
 
  private:
   // Allows modifying the TextInputPlugin in tests.
   friend class TextInputPluginModifier;
+  friend class EngineModifier;
 
   // Sends the current state of the given model to the Flutter engine.
   void SendStateUpdate(const TextInputModel& model);

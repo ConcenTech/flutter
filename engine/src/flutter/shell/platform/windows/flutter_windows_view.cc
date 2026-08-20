@@ -286,6 +286,9 @@ void FlutterWindowsView::OnPointerDown(double x,
                                        uint64_t buttons,
                                        uint32_t rotation,
                                        uint32_t pressure) {
+  if (engine_->text_input_plugin()) {
+    engine_->text_input_plugin()->SetLastPointerKind(device_kind);
+  }
   if (buttons != 0) {
     auto state = GetOrCreatePointerState(device_kind, device_id);
     state->buttons |= buttons;
@@ -920,6 +923,13 @@ void FlutterWindowsView::OnDwmCompositionChanged() {
 }
 
 void FlutterWindowsView::OnWindowStateEvent(HWND hwnd, WindowStateEvent event) {
+  // Alt-Tab and other HWND focus loss must hide the touch keyboard even if a
+  // text client remains attached.
+  if (event == WindowStateEvent::kUnfocus) {
+    if (OnScreenKeyboard* keyboard = engine_->on_screen_keyboard()) {
+      keyboard->Dismiss(hwnd);
+    }
+  }
   engine_->OnWindowStateEvent(hwnd, event);
 }
 

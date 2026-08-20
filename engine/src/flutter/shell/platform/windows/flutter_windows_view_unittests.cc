@@ -24,6 +24,7 @@
 #include "flutter/shell/platform/windows/testing/egl/mock_manager.h"
 #include "flutter/shell/platform/windows/testing/egl/mock_window_surface.h"
 #include "flutter/shell/platform/windows/testing/engine_modifier.h"
+#include "flutter/shell/platform/windows/testing/mock_on_screen_keyboard.h"
 #include "flutter/shell/platform/windows/testing/mock_window_binding_handler.h"
 #include "flutter/shell/platform/windows/testing/mock_windows_proc_table.h"
 #include "flutter/shell/platform/windows/testing/test_keyboard.h"
@@ -1946,6 +1947,50 @@ TEST(FlutterWindowsViewTest, FirstFrameCallbackSkippedOnFailedSoftwarePresent) {
   engine->task_runner()->ProcessTasks();
 
   EXPECT_FALSE(callback_fired);
+}
+
+TEST(FlutterWindowsViewTest, PointerDownSetsLastPointerKind) {
+  std::unique_ptr<FlutterWindowsEngine> engine = GetTestEngine();
+  ASSERT_NE(engine->text_input_plugin(), nullptr);
+
+  auto window_binding_handler =
+      std::make_unique<NiceMock<MockWindowBindingHandler>>();
+  std::unique_ptr<FlutterWindowsView> view =
+      engine->CreateView(std::move(window_binding_handler),
+                         /*is_sized_to_content=*/false, BoxConstraints());
+
+  view->OnPointerDown(10.0, 10.0, kFlutterPointerDeviceKindTouch,
+                      /*device_id=*/0, /*buttons=*/0,
+                      /*rotation=*/0, /*pressure=*/0);
+
+  EXPECT_EQ(engine->text_input_plugin()->last_pointer_kind(),
+            kFlutterPointerDeviceKindTouch);
+
+  view->OnPointerDown(10.0, 10.0, kFlutterPointerDeviceKindMouse,
+                      /*device_id=*/0, /*buttons=*/0,
+                      /*rotation=*/0, /*pressure=*/0);
+
+  EXPECT_EQ(engine->text_input_plugin()->last_pointer_kind(),
+            kFlutterPointerDeviceKindMouse);
+}
+
+TEST(FlutterWindowsViewTest, UnfocusDismissesOnScreenKeyboard) {
+  std::unique_ptr<FlutterWindowsEngine> engine = GetTestEngine();
+  EngineModifier modifier(engine.get());
+
+  auto keyboard = std::make_unique<NiceMock<MockOnScreenKeyboard>>();
+  MockOnScreenKeyboard* keyboard_ptr = keyboard.get();
+  modifier.SetOnScreenKeyboard(std::move(keyboard));
+
+  auto window_binding_handler =
+      std::make_unique<NiceMock<MockWindowBindingHandler>>();
+  std::unique_ptr<FlutterWindowsView> view =
+      engine->CreateView(std::move(window_binding_handler),
+                         /*is_sized_to_content=*/false, BoxConstraints());
+
+  HWND hwnd = reinterpret_cast<HWND>(1);
+  EXPECT_CALL(*keyboard_ptr, Dismiss(hwnd)).Times(1);
+  view->OnWindowStateEvent(hwnd, WindowStateEvent::kUnfocus);
 }
 
 }  // namespace testing
