@@ -22,14 +22,18 @@
 namespace flutter {
 
 class FlutterWindowsEngine;
+class OnScreenKeyboard;
 
 // Implements a text input plugin.
 //
 // Specifically handles window events within windows.
 class TextInputPlugin {
  public:
+  // |on_screen_keyboard| may be null in tests. Ownership remains with the
+  // engine.
   TextInputPlugin(flutter::BinaryMessenger* messenger,
-                  FlutterWindowsEngine* engine);
+                  FlutterWindowsEngine* engine,
+                  OnScreenKeyboard* on_screen_keyboard = nullptr);
 
   virtual ~TextInputPlugin();
 
@@ -77,6 +81,9 @@ class TextInputPlugin {
   // view is excluded from this reset.
   void OnViewRemoved(FlutterViewId view_id);
 
+  // The on-screen keyboard, if one was injected.
+  OnScreenKeyboard* on_screen_keyboard() const { return on_screen_keyboard_; }
+
  private:
   // Allows modifying the TextInputPlugin in tests.
   friend class TextInputPluginModifier;
@@ -105,6 +112,11 @@ class TextInputPlugin {
 
   // The associated |FlutterWindowsEngine|.
   FlutterWindowsEngine* engine_;
+
+  // The on-screen keyboard used to show and hide the Windows touch keyboard.
+  //
+  // May be null in tests. Display/Dismiss is wired by a follow-up.
+  OnScreenKeyboard* on_screen_keyboard_ = nullptr;
 
   // The active client id.
   int client_id_;

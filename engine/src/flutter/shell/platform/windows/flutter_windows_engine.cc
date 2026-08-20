@@ -958,6 +958,18 @@ void FlutterWindowsEngine::InitializeKeyboard() {
         return MapVirtualKey(virtual_key,
                              extended ? MAPVK_VK_TO_VSC_EX : MAPVK_VK_TO_VSC);
       };
+
+  // Destroy the text plugin first so it cannot hold a dangling
+  // OnScreenKeyboard pointer across recreation.
+  text_input_plugin_.reset();
+
+  on_screen_keyboard_ = CreateOnScreenKeyboard();
+  FML_DCHECK(on_screen_keyboard_);
+  on_screen_keyboard_->SetVisibilityChangedCallback(
+      [this](bool shown, double physical_bottom_inset) {
+        OnOnScreenKeyboardVisibilityChanged(shown, physical_bottom_inset);
+      });
+
   keyboard_key_handler_ = std::move(CreateKeyboardKeyHandler(
       internal_plugin_messenger, get_key_state, map_vk_to_scan));
   text_input_plugin_ =
@@ -985,7 +997,19 @@ FlutterWindowsEngine::CreateKeyboardKeyHandler(
 
 std::unique_ptr<TextInputPlugin> FlutterWindowsEngine::CreateTextInputPlugin(
     BinaryMessenger* messenger) {
-  return std::make_unique<TextInputPlugin>(messenger, this);
+  return std::make_unique<TextInputPlugin>(messenger, this,
+                                           on_screen_keyboard_.get());
+}
+
+std::unique_ptr<OnScreenKeyboard>
+FlutterWindowsEngine::CreateOnScreenKeyboard() {
+  return std::make_unique<OnScreenKeyboardWin>(task_runner_.get());
+}
+
+void FlutterWindowsEngine::OnOnScreenKeyboardVisibilityChanged(
+    bool /*shown*/,
+    double /*physical_bottom_inset*/) {
+  // A follow-up sends window metrics with physical_view_inset_bottom.
 }
 
 bool FlutterWindowsEngine::RegisterExternalTexture(int64_t texture_id) {

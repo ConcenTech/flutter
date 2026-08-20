@@ -25,6 +25,8 @@ class MockTaskRunner : public TaskRunner {
 
   void SimulateTimerAwake() { ProcessTasks(); }
 
+  void AdvanceTime(std::chrono::milliseconds delay) { current_time_ += delay; }
+
  protected:
   virtual void WakeUp() override {
     // Do nothing to avoid processing tasks immediately after the tasks is
@@ -32,12 +34,14 @@ class MockTaskRunner : public TaskRunner {
   }
 
   virtual TaskTimePoint GetCurrentTimeForTask() const override {
-    return TaskTimePoint(
-        std::chrono::duration_cast<std::chrono::steady_clock::duration>(
-            std::chrono::nanoseconds(10000)));
+    return current_time_;
   }
 
  private:
+  TaskTimePoint current_time_ = TaskTimePoint(
+      std::chrono::duration_cast<std::chrono::steady_clock::duration>(
+          std::chrono::nanoseconds(10000)));
+
   FML_DISALLOW_COPY_AND_ASSIGN(MockTaskRunner);
 };
 
@@ -155,6 +159,25 @@ TEST(TaskRunnerTest, TaskRunnerWindowCoalescesWakeUpMessages) {
   }
 
   EXPECT_EQ(delegate.process_tasks_call_count_, 1);
+}
+
+TEST(TaskRunnerTest, DelayedTaskDoesNotRunUntilDelayElapses) {
+  bool ran = false;
+  MockTaskRunner runner(MockGetCurrentTime, [](const FlutterTask*) {});
+
+  runner.PostDelayedTask([&ran]() { ran = true; },
+                         std::chrono::milliseconds(300));
+
+  runner.SimulateTimerAwake();
+  EXPECT_FALSE(ran);
+
+  runner.AdvanceTime(std::chrono::milliseconds(299));
+  runner.SimulateTimerAwake();
+  EXPECT_FALSE(ran);
+
+  runner.AdvanceTime(std::chrono::milliseconds(1));
+  runner.SimulateTimerAwake();
+  EXPECT_TRUE(ran);
 }
 
 }  // namespace testing

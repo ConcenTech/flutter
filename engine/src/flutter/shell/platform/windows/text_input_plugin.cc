@@ -106,12 +106,14 @@ void TextInputPlugin::KeyboardHook(int key,
 }
 
 TextInputPlugin::TextInputPlugin(flutter::BinaryMessenger* messenger,
-                                 FlutterWindowsEngine* engine)
+                                 FlutterWindowsEngine* engine,
+                                 OnScreenKeyboard* on_screen_keyboard)
     : channel_(std::make_unique<flutter::MethodChannel<rapidjson::Document>>(
           messenger,
           kChannelName,
           &flutter::JsonMethodCodec::GetInstance())),
       engine_(engine),
+      on_screen_keyboard_(on_screen_keyboard),
       active_model_(nullptr) {
   channel_->SetMethodCallHandler(
       [this](

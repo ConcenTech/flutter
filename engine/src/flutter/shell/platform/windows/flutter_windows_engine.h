@@ -35,6 +35,7 @@
 #include "flutter/shell/platform/windows/host_window.h"
 #include "flutter/shell/platform/windows/keyboard_handler_base.h"
 #include "flutter/shell/platform/windows/keyboard_key_embedder_handler.h"
+#include "flutter/shell/platform/windows/on_screen_keyboard.h"
 #include "flutter/shell/platform/windows/platform_handler.h"
 #include "flutter/shell/platform/windows/platform_view_plugin.h"
 #include "flutter/shell/platform/windows/public/flutter_windows.h"
@@ -204,6 +205,7 @@ class FlutterWindowsEngine {
     return keyboard_key_handler_.get();
   }
   TextInputPlugin* text_input_plugin() { return text_input_plugin_.get(); }
+  OnScreenKeyboard* on_screen_keyboard() { return on_screen_keyboard_.get(); }
 
   // Sends the given message to the engine, calling |reply| with |user_data|
   // when a response is received from the engine if they are non-null.
@@ -355,6 +357,12 @@ class FlutterWindowsEngine {
   virtual std::unique_ptr<TextInputPlugin> CreateTextInputPlugin(
       BinaryMessenger* messenger);
 
+  // Creates the on-screen keyboard controller.
+  //
+  // Exposing this method allows unit tests to override in order to
+  // capture information.
+  virtual std::unique_ptr<OnScreenKeyboard> CreateOnScreenKeyboard();
+
   // Invoked by the engine right before the engine is restarted.
   //
   // This should reset necessary states to as if the engine has just been
@@ -391,6 +399,12 @@ class FlutterWindowsEngine {
   // This requires that a view is attached to the engine.
   // Calling this method again resets the keyboard state.
   void InitializeKeyboard();
+
+  // Called when the on-screen keyboard reports a visibility change.
+  //
+  // A follow-up sends window metrics with |physical_view_inset_bottom|.
+  void OnOnScreenKeyboardVisibilityChanged(bool shown,
+                                           double physical_bottom_inset);
 
   // Send the currently enabled accessibility features to the engine.
   void SendAccessibilityFeatures();
@@ -482,6 +496,9 @@ class FlutterWindowsEngine {
   // The manager that manages the lifecycle of |HostWindow|s, native
   // Win32 windows hosting a Flutter view in their client area.
   std::unique_ptr<WindowManager> window_manager_;
+
+  // Controls the Windows on-screen (touch) keyboard.
+  std::unique_ptr<OnScreenKeyboard> on_screen_keyboard_;
 
   // Handlers for text events from Windows.
   std::unique_ptr<TextInputPlugin> text_input_plugin_;
