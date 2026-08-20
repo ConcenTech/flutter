@@ -1993,5 +1993,78 @@ TEST(FlutterWindowsViewTest, UnfocusDismissesOnScreenKeyboard) {
   view->OnWindowStateEvent(hwnd, WindowStateEvent::kUnfocus);
 }
 
+TEST(FlutterWindowsViewTest, WindowMetricsIncludeKeyboardBottomInset) {
+  std::unique_ptr<FlutterWindowsEngine> engine = GetTestEngine();
+  EngineModifier modifier(engine.get());
+
+  auto keyboard = std::make_unique<NiceMock<MockOnScreenKeyboard>>();
+  ON_CALL(*keyboard, physical_bottom_inset()).WillByDefault(Return(120.0));
+  modifier.SetOnScreenKeyboard(std::move(keyboard));
+
+  auto window_binding_handler =
+      std::make_unique<NiceMock<MockWindowBindingHandler>>();
+  EXPECT_CALL(*window_binding_handler, GetPhysicalWindowBounds)
+      .WillRepeatedly(Return(PhysicalWindowBounds{800, 600}));
+  FlutterWindowsView view{kImplicitViewId, engine.get(),
+                          std::move(window_binding_handler), false,
+                          BoxConstraints()};
+
+  FlutterWindowMetricsEvent event = view.CreateWindowMetricsEvent();
+  EXPECT_EQ(event.physical_view_inset_bottom, 120.0);
+  EXPECT_EQ(event.physical_view_inset_top, 0.0);
+  EXPECT_EQ(event.physical_view_inset_left, 0.0);
+  EXPECT_EQ(event.physical_view_inset_right, 0.0);
+}
+
+TEST(FlutterWindowsViewTest, KeyboardBottomInsetIsClampedToHeight) {
+  std::unique_ptr<FlutterWindowsEngine> engine = GetTestEngine();
+  EngineModifier modifier(engine.get());
+
+  auto keyboard = std::make_unique<NiceMock<MockOnScreenKeyboard>>();
+  ON_CALL(*keyboard, physical_bottom_inset()).WillByDefault(Return(9999.0));
+  modifier.SetOnScreenKeyboard(std::move(keyboard));
+
+  auto window_binding_handler =
+      std::make_unique<NiceMock<MockWindowBindingHandler>>();
+  EXPECT_CALL(*window_binding_handler, GetPhysicalWindowBounds)
+      .WillRepeatedly(Return(PhysicalWindowBounds{400, 200}));
+  FlutterWindowsView view{kImplicitViewId, engine.get(),
+                          std::move(window_binding_handler), false,
+                          BoxConstraints()};
+
+  FlutterWindowMetricsEvent event = view.CreateWindowMetricsEvent();
+  EXPECT_EQ(event.physical_view_inset_bottom, 200.0);
+}
+
+TEST(FlutterWindowsViewTest, KeyboardVisibilityChangeResendsWindowMetrics) {
+  std::unique_ptr<FlutterWindowsEngine> engine = GetTestEngine();
+  EngineModifier modifier(engine.get());
+
+  auto keyboard = std::make_unique<NiceMock<MockOnScreenKeyboard>>();
+  ON_CALL(*keyboard, physical_bottom_inset()).WillByDefault(Return(80.0));
+  modifier.SetOnScreenKeyboard(std::move(keyboard));
+
+  auto window_binding_handler =
+      std::make_unique<NiceMock<MockWindowBindingHandler>>();
+  EXPECT_CALL(*window_binding_handler, GetPhysicalWindowBounds)
+      .WillRepeatedly(Return(PhysicalWindowBounds{800, 600}));
+  std::unique_ptr<FlutterWindowsView> view =
+      engine->CreateView(std::move(window_binding_handler),
+                         /*is_sized_to_content=*/false, BoxConstraints());
+
+  bool received_metrics = false;
+  modifier.embedder_api().SendWindowMetricsEvent = MOCK_ENGINE_PROC(
+      SendWindowMetricsEvent,
+      ([&received_metrics](auto engine,
+                           const FlutterWindowMetricsEvent* event) {
+        received_metrics = true;
+        EXPECT_EQ(event->physical_view_inset_bottom, 80.0);
+        return kSuccess;
+      }));
+
+  modifier.OnOnScreenKeyboardVisibilityChanged(true, 80.0);
+  EXPECT_TRUE(received_metrics);
+}
+
 }  // namespace testing
 }  // namespace flutter

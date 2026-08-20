@@ -88,6 +88,11 @@ class EngineModifier {
     }
   }
 
+  void OnOnScreenKeyboardVisibilityChanged(bool shown,
+                                           double physical_bottom_inset) {
+    engine_->OnOnScreenKeyboardVisibilityChanged(shown, physical_bottom_inset);
+  }
+
   void SetLifecycleManager(std::unique_ptr<WindowsLifecycleManager>&& handler) {
     engine_->lifecycle_manager_ = std::move(handler);
   }

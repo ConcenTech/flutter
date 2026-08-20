@@ -1009,7 +1009,19 @@ FlutterWindowsEngine::CreateOnScreenKeyboard() {
 void FlutterWindowsEngine::OnOnScreenKeyboardVisibilityChanged(
     bool /*shown*/,
     double /*physical_bottom_inset*/) {
-  // A follow-up sends window metrics with physical_view_inset_bottom.
+  std::vector<FlutterWindowsView*> views;
+  {
+    std::shared_lock read_lock(views_mutex_);
+    views.reserve(views_.size());
+    for (const auto& [view_id, view] : views_) {
+      views.push_back(view);
+    }
+  }
+  for (FlutterWindowsView* view : views) {
+    if (view != nullptr) {
+      SendWindowMetricsEvent(view->CreateWindowMetricsEvent());
+    }
+  }
 }
 
 bool FlutterWindowsEngine::RegisterExternalTexture(int64_t texture_id) {

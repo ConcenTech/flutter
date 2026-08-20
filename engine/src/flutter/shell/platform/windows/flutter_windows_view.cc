@@ -28,6 +28,23 @@ static const int kMaxPenPressure = 1024;
 // for a window resize operation to complete.
 constexpr std::chrono::milliseconds kWindowResizeTimeout{100};
 
+// Bottom inset from the on-screen keyboard, clamped to [0, height].
+double ClampedKeyboardBottomInset(FlutterWindowsEngine* engine,
+                                  size_t height) {
+  double bottom = 0.0;
+  if (OnScreenKeyboard* keyboard = engine->on_screen_keyboard()) {
+    bottom = keyboard->physical_bottom_inset();
+  }
+  if (bottom < 0.0) {
+    bottom = 0.0;
+  }
+  const double max_inset = static_cast<double>(height);
+  if (bottom > max_inset) {
+    bottom = max_inset;
+  }
+  return bottom;
+}
+
 /// Returns true if the surface will be updated as part of the resize process.
 ///
 /// This is called on window resize to determine if the platform thread needs
@@ -429,6 +446,11 @@ void FlutterWindowsView::SendWindowMetrics(size_t width,
   event.pixel_ratio = pixel_ratio;
   event.display_id = display_id;
   event.view_id = view_id_;
+  event.physical_view_inset_top = 0.0;
+  event.physical_view_inset_right = 0.0;
+  event.physical_view_inset_left = 0.0;
+  event.physical_view_inset_bottom =
+      ClampedKeyboardBottomInset(engine_, height);
   engine_->SendWindowMetricsEvent(event);
 }
 
@@ -454,6 +476,11 @@ FlutterWindowMetricsEvent FlutterWindowsView::CreateWindowMetricsEvent() const {
   event.pixel_ratio = pixel_ratio;
   event.display_id = display_id;
   event.view_id = view_id_;
+  event.physical_view_inset_top = 0.0;
+  event.physical_view_inset_right = 0.0;
+  event.physical_view_inset_left = 0.0;
+  event.physical_view_inset_bottom =
+      ClampedKeyboardBottomInset(engine_, event.height);
 
   return event;
 }

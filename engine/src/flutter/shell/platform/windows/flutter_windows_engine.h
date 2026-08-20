@@ -402,7 +402,7 @@ class FlutterWindowsEngine {
 
   // Called when the on-screen keyboard reports a visibility change.
   //
-  // A follow-up sends window metrics with |physical_view_inset_bottom|.
+  // Re-sends window metrics so |physical_view_inset_bottom| tracks occlusion.
   void OnOnScreenKeyboardVisibilityChanged(bool shown,
                                            double physical_bottom_inset);
 
