@@ -10,6 +10,7 @@
 #include <chrono>
 #include <cstdint>
 #include <functional>
+#include <memory>
 
 #include "flutter/fml/macros.h"
 #include "flutter/fml/memory/weak_ptr.h"
@@ -57,8 +58,9 @@ class OnScreenKeyboard {
 
 // Default |OnScreenKeyboard| implementation.
 //
-// Debounces Display/Dismiss on the platform |TaskRunner|. WinRT InputPane
-// application is implemented in |ApplyVisibility|.
+// Debounces Display/Dismiss on the platform |TaskRunner|, then drives WinRT
+// IInputPane2::TryShow / TryHide. Showing/Hiding update |shown| and the
+// bottom inset.
 class OnScreenKeyboardWin : public OnScreenKeyboard {
  public:
   // Coalesces Display/Dismiss so field-to-field focus changes do not blink
@@ -66,7 +68,7 @@ class OnScreenKeyboardWin : public OnScreenKeyboard {
   static constexpr std::chrono::milliseconds kDisplayDismissDebounce{300};
 
   // |task_runner| must outlive this object and is used to debounce
-  // Display/Dismiss.
+  // Display/Dismiss and to marshal InputPane events onto the platform thread.
   explicit OnScreenKeyboardWin(TaskRunner* task_runner);
 
   ~OnScreenKeyboardWin() override;
@@ -86,16 +88,28 @@ class OnScreenKeyboardWin : public OnScreenKeyboard {
   // |OnScreenKeyboard|
   double physical_bottom_inset() const override;
 
+  // |client_screen| and |occluded_screen| are in screen coordinates.
+  // Returns the bottom inset in physical pixels, clamped to the client height.
+  static double ComputeBottomInset(const RECT& client_screen,
+                                   const RECT& occluded_screen);
+
  protected:
-  // Applies a coalesced show or hide. The default is a no-op; WinRT InputPane
-  // TryShow/TryHide is filled in by a follow-up.
+  // Applies a coalesced show or hide via IInputPane2. Failures are ignored.
   virtual void ApplyVisibility(HWND hwnd, bool show);
 
   // Invokes |callback_| with the current shown state and bottom inset.
   void NotifyVisibilityChanged();
 
  private:
+  struct InputPaneSession;
+
   void RequestVisibility(HWND hwnd, bool show);
+
+  // Subscribes to InputPane Showing/Hiding for |hwnd|. No-op on COM/WinRT
+  // failure (CO_E_NOTINITIALIZED, REGDB_E_CLASSNOTREG, invalid HWND).
+  bool EnsureInputPane(HWND hwnd);
+
+  void HandleInputPaneEvent(bool shown, const RECT& occluded_screen);
 
   TaskRunner* task_runner_;
   VisibilityChanged callback_;
@@ -104,6 +118,7 @@ class OnScreenKeyboardWin : public OnScreenKeyboard {
   bool pending_show_ = false;
   bool shown_ = false;
   double physical_bottom_inset_ = 0.0;
+  std::unique_ptr<InputPaneSession> pane_session_;
 
   fml::WeakPtrFactory<OnScreenKeyboardWin> weak_factory_;
 

@@ -174,5 +174,39 @@ TEST(OnScreenKeyboardTest, MockCanBeConstructed) {
   EXPECT_FALSE(keyboard.shown());
 }
 
+TEST(OnScreenKeyboardTest, ComputeBottomInsetEmptyIntersection) {
+  RECT client{0, 0, 800, 600};
+  RECT occluded{900, 0, 1100, 200};
+  EXPECT_EQ(OnScreenKeyboardWin::ComputeBottomInset(client, occluded), 0.0);
+}
+
+TEST(OnScreenKeyboardTest, ComputeBottomInsetKeyboardFromBottom) {
+  RECT client{0, 0, 800, 600};
+  RECT occluded{0, 400, 800, 600};
+  EXPECT_EQ(OnScreenKeyboardWin::ComputeBottomInset(client, occluded), 200.0);
+}
+
+TEST(OnScreenKeyboardTest, ComputeBottomInsetClampedToClientHeight) {
+  RECT client{0, 0, 800, 600};
+  RECT occluded{0, -100, 800, 700};
+  EXPECT_EQ(OnScreenKeyboardWin::ComputeBottomInset(client, occluded), 600.0);
+}
+
+TEST(OnScreenKeyboardTest, InvalidHwndDoesNotCrash) {
+  MockTaskRunner runner;
+  OnScreenKeyboardWin keyboard(&runner);
+  bool called = false;
+  keyboard.SetVisibilityChangedCallback(
+      [&called](bool, double) { called = true; });
+
+  keyboard.Display(DummyHwnd());
+  runner.AdvanceTime(OnScreenKeyboardWin::kDisplayDismissDebounce);
+  runner.SimulateTimerAwake();
+
+  EXPECT_FALSE(keyboard.shown());
+  EXPECT_EQ(keyboard.physical_bottom_inset(), 0.0);
+  EXPECT_FALSE(called);
+}
+
 }  // namespace testing
 }  // namespace flutter
