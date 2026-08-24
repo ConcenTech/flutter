@@ -111,6 +111,10 @@ class TextInputManager {
   // Destroys the system caret if this manager created it.
   void DestroySystemCaret();
 
+  // Associates or clears the HWND's IMM32 context. Clearing it stops Windows
+  // from auto-invoking the touch keyboard after the text client is gone.
+  void AssociateImeContext(bool enable);
+
   // The window with which the IME windows are associated.
   HWND window_handle_ = nullptr;
 

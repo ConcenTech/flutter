@@ -242,6 +242,7 @@ void OnScreenKeyboardWin::RequestVisibility(HWND hwnd, bool show) {
 
   pending_hwnd_ = hwnd;
   pending_show_ = show;
+  want_visible_ = show;
   const uint64_t generation = ++generation_;
   task_runner_->PostDelayedTask(
       [weak = weak_factory_.GetWeakPtr(), generation]() {
@@ -276,26 +277,35 @@ bool OnScreenKeyboardWin::EnsureInputPane(HWND hwnd) {
   session->pane = pane;
 
   auto showing_handler = Callback<InputPaneVisibilityHandler>(
-      [weak = weak_factory_.GetWeakPtr()](
+      [weak = weak_factory_.GetWeakPtr(), runner = task_runner_](
           IInputPane* /*sender*/, IInputPaneVisibilityEventArgs* args) {
-        if (!weak || !args) {
+        if (!args) {
           return S_OK;
         }
         Rect occluded{};
         if (FAILED(args->get_OccludedRect(&occluded))) {
           return S_OK;
         }
-        weak->HandleInputPaneEvent(true, WinrtRectToScreenRect(occluded));
+        const RECT screen = WinrtRectToScreenRect(occluded);
+        // InputPane is not agile; marshal before touching WeakPtr.
+        runner->RunNowOrPostTask([weak, screen]() {
+          if (!weak) {
+            return;
+          }
+          weak->HandleInputPaneEvent(true, screen);
+        });
         return S_OK;
       });
   auto hiding_handler = Callback<InputPaneVisibilityHandler>(
-      [weak = weak_factory_.GetWeakPtr()](
+      [weak = weak_factory_.GetWeakPtr(), runner = task_runner_](
           IInputPane* /*sender*/, IInputPaneVisibilityEventArgs* args) {
-        if (!weak) {
-          return S_OK;
-        }
         RECT empty{};
-        weak->HandleInputPaneEvent(false, empty);
+        runner->RunNowOrPostTask([weak, empty]() {
+          if (!weak) {
+            return;
+          }
+          weak->HandleInputPaneEvent(false, empty);
+        });
         return S_OK;
       });
 
@@ -324,26 +334,30 @@ bool OnScreenKeyboardWin::EnsureInputPane(HWND hwnd) {
 
 void OnScreenKeyboardWin::HandleInputPaneEvent(bool shown,
                                                const RECT& occluded_screen) {
-  HWND hwnd = pane_session_ ? pane_session_->view_hwnd : nullptr;
-  task_runner_->RunNowOrPostTask(
-      [weak = weak_factory_.GetWeakPtr(), shown, occluded_screen, hwnd]() {
-        if (!weak) {
-          return;
-        }
-        weak->shown_ = shown;
-        if (shown && hwnd) {
-          RECT client_screen{};
-          if (MapClientRectToScreen(hwnd, &client_screen)) {
-            weak->physical_bottom_inset_ =
-                ComputeBottomInset(client_screen, occluded_screen);
-          } else {
-            weak->physical_bottom_inset_ = 0.0;
-          }
-        } else {
-          weak->physical_bottom_inset_ = 0.0;
-        }
-        weak->NotifyVisibilityChanged();
-      });
+  HWND hwnd = pane_session_ ? pane_session_->view_hwnd : pending_hwnd_;
+  if (shown && !want_visible_) {
+    // OS auto-invoked the pane after we dismissed it (touch on a non-field,
+    // navigation). Hide immediately; do not report occlusion.
+    ApplyVisibility(hwnd, false);
+    return;
+  }
+
+  shown_ = shown;
+  if (!shown) {
+    want_visible_ = false;
+  }
+  if (shown && hwnd) {
+    RECT client_screen{};
+    if (MapClientRectToScreen(hwnd, &client_screen)) {
+      physical_bottom_inset_ =
+          ComputeBottomInset(client_screen, occluded_screen);
+    } else {
+      physical_bottom_inset_ = 0.0;
+    }
+  } else {
+    physical_bottom_inset_ = 0.0;
+  }
+  NotifyVisibilityChanged();
 }
 
 }  // namespace flutter

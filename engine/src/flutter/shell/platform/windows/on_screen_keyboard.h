@@ -60,7 +60,8 @@ class OnScreenKeyboard {
 //
 // Debounces Display/Dismiss on the platform |TaskRunner|, then drives WinRT
 // IInputPane2::TryShow / TryHide. Showing/Hiding update |shown| and the
-// bottom inset.
+// bottom inset. Showing while not requested (OS auto-invoke) is immediately
+// TryHide'd so a dismissed keyboard stays closed.
 class OnScreenKeyboardWin : public OnScreenKeyboard {
  public:
   // Coalesces Display/Dismiss so field-to-field focus changes do not blink
@@ -100,6 +101,9 @@ class OnScreenKeyboardWin : public OnScreenKeyboard {
   // Invokes |callback_| with the current shown state and bottom inset.
   void NotifyVisibilityChanged();
 
+  // |occluded_screen| is the InputPane OccludedRect in screen coordinates.
+  void HandleInputPaneEvent(bool shown, const RECT& occluded_screen);
+
  private:
   struct InputPaneSession;
 
@@ -109,13 +113,12 @@ class OnScreenKeyboardWin : public OnScreenKeyboard {
   // failure (CO_E_NOTINITIALIZED, REGDB_E_CLASSNOTREG, invalid HWND).
   bool EnsureInputPane(HWND hwnd);
 
-  void HandleInputPaneEvent(bool shown, const RECT& occluded_screen);
-
   TaskRunner* task_runner_;
   VisibilityChanged callback_;
   uint64_t generation_ = 0;
   HWND pending_hwnd_ = nullptr;
   bool pending_show_ = false;
+  bool want_visible_ = false;
   bool shown_ = false;
   double physical_bottom_inset_ = 0.0;
   std::unique_ptr<InputPaneSession> pane_session_;

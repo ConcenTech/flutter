@@ -57,6 +57,8 @@ class RecordingOnScreenKeyboard : public OnScreenKeyboardWin {
                             std::vector<ApplyCall>* applies)
       : OnScreenKeyboardWin(task_runner), applies_(applies) {}
 
+  using OnScreenKeyboardWin::HandleInputPaneEvent;
+
  protected:
   void ApplyVisibility(HWND hwnd, bool show) override {
     applies_->push_back(ApplyCall{hwnd, show});
@@ -206,6 +208,57 @@ TEST(OnScreenKeyboardTest, InvalidHwndDoesNotCrash) {
   EXPECT_FALSE(keyboard.shown());
   EXPECT_EQ(keyboard.physical_bottom_inset(), 0.0);
   EXPECT_FALSE(called);
+}
+
+TEST(OnScreenKeyboardTest, UnsolicitedShowingHidesWhenNotWanted) {
+  MockTaskRunner runner;
+  std::vector<ApplyCall> applies;
+  RecordingOnScreenKeyboard keyboard(&runner, &applies);
+  HWND hwnd = DummyHwnd();
+
+  keyboard.Dismiss(hwnd);
+  applies.clear();
+
+  RECT occluded{0, 400, 800, 600};
+  keyboard.HandleInputPaneEvent(true, occluded);
+
+  ASSERT_EQ(applies.size(), 1u);
+  EXPECT_EQ(applies[0].hwnd, hwnd);
+  EXPECT_FALSE(applies[0].show);
+  EXPECT_FALSE(keyboard.shown());
+  EXPECT_EQ(keyboard.physical_bottom_inset(), 0.0);
+}
+
+TEST(OnScreenKeyboardTest, RequestedShowingDoesNotHide) {
+  MockTaskRunner runner;
+  std::vector<ApplyCall> applies;
+  RecordingOnScreenKeyboard keyboard(&runner, &applies);
+  HWND hwnd = DummyHwnd();
+
+  keyboard.Display(hwnd);
+
+  RECT occluded{0, 400, 800, 600};
+  keyboard.HandleInputPaneEvent(true, occluded);
+
+  EXPECT_TRUE(applies.empty());
+}
+
+TEST(OnScreenKeyboardTest, HidingClearsWantedVisible) {
+  MockTaskRunner runner;
+  std::vector<ApplyCall> applies;
+  RecordingOnScreenKeyboard keyboard(&runner, &applies);
+  HWND hwnd = DummyHwnd();
+
+  keyboard.Display(hwnd);
+  RECT empty{};
+  keyboard.HandleInputPaneEvent(false, empty);
+  applies.clear();
+
+  RECT occluded{0, 400, 800, 600};
+  keyboard.HandleInputPaneEvent(true, occluded);
+
+  ASSERT_EQ(applies.size(), 1u);
+  EXPECT_FALSE(applies[0].show);
 }
 
 }  // namespace testing

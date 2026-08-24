@@ -5,6 +5,7 @@
 #include "flutter/shell/platform/windows/text_input_manager.h"
 
 #include <windows.h>
+#include <imm.h>
 
 #include "gtest/gtest.h"
 
@@ -94,6 +95,36 @@ TEST_F(TextInputManagerTest, UnfocusDestroysCaretAndFocusRestoresIfClient) {
 
   manager_.OnWindowFocusChanged(true);
   EXPECT_TRUE(manager_.caret_created());
+}
+
+TEST_F(TextInputManagerTest, AbortComposingDetachesImeContext) {
+  manager_.UpdateCaretRect(Rect{Point(10, 20), Size(5, 15)});
+  {
+    HIMC before = ImmGetContext(hwnd_);
+    EXPECT_NE(before, nullptr);
+    if (before) {
+      ImmReleaseContext(hwnd_, before);
+    }
+  }
+
+  manager_.AbortComposing();
+
+  HIMC after = ImmGetContext(hwnd_);
+  EXPECT_EQ(after, nullptr);
+  if (after) {
+    ImmReleaseContext(hwnd_, after);
+  }
+}
+
+TEST_F(TextInputManagerTest, CaretRectRestoresImeContext) {
+  manager_.AbortComposing();
+  manager_.UpdateCaretRect(Rect{Point(10, 20), Size(5, 15)});
+
+  HIMC context = ImmGetContext(hwnd_);
+  EXPECT_NE(context, nullptr);
+  if (context) {
+    ImmReleaseContext(hwnd_, context);
+  }
 }
 
 }  // namespace testing

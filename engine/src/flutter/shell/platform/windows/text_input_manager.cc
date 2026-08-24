@@ -68,6 +68,14 @@ void TextInputManager::DestroySystemCaret() {
   caret_created_ = false;
 }
 
+void TextInputManager::AssociateImeContext(bool enable) {
+  if (window_handle_ == nullptr) {
+    return;
+  }
+  ::ImmAssociateContextEx(window_handle_, nullptr,
+                          enable ? IACE_DEFAULT : 0);
+}
+
 void TextInputManager::CreateImeWindow() {
   if (window_handle_ == nullptr) {
     return;
@@ -77,6 +85,7 @@ void TextInputManager::CreateImeWindow() {
   // the current system caret instead via ::GetCaretPos(). In order to behave
   // as expected with these IMEs, we create a temporary system caret.
   ime_active_ = true;
+  AssociateImeContext(true);
   EnsureSystemCaret();
 
   // Set the position of the IME windows.
@@ -115,6 +124,7 @@ void TextInputManager::UpdateCaretRect(const Rect& rect) {
     return;
   }
 
+  AssociateImeContext(true);
   EnsureSystemCaret();
   ImmContext imm_context(window_handle_);
   if (imm_context.IsValid()) {
@@ -171,6 +181,7 @@ void TextInputManager::AbortComposing() {
 
   ime_active_ = false;
   text_client_attached_ = false;
+  AssociateImeContext(false);
   DestroySystemCaret();
 }
 
