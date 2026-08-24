@@ -72,8 +72,7 @@ void TextInputManager::AssociateImeContext(bool enable) {
   if (window_handle_ == nullptr) {
     return;
   }
-  ::ImmAssociateContextEx(window_handle_, nullptr,
-                          enable ? IACE_DEFAULT : 0);
+  ::ImmAssociateContextEx(window_handle_, nullptr, enable ? IACE_DEFAULT : 0);
 }
 
 void TextInputManager::CreateImeWindow() {
@@ -81,12 +80,14 @@ void TextInputManager::CreateImeWindow() {
     return;
   }
 
-  // Some IMEs ignore calls to ::ImmSetCandidateWindow() and use the position of
-  // the current system caret instead via ::GetCaretPos(). In order to behave
-  // as expected with these IMEs, we create a temporary system caret.
   ime_active_ = true;
-  AssociateImeContext(true);
-  EnsureSystemCaret();
+  // Re-associate IMM32 only while a text client is attached so
+  // WM_IME_SETCONTEXT does not undo |AbortComposing|.
+  if (text_client_attached_) {
+    AssociateImeContext(true);
+    // Some IMEs ignore ::ImmSetCandidateWindow() and use ::GetCaretPos().
+    EnsureSystemCaret();
+  }
 
   // Set the position of the IME windows.
   UpdateImeWindow();

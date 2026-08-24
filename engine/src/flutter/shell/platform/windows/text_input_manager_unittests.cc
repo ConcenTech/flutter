@@ -74,10 +74,20 @@ TEST_F(TextInputManagerTest, EndCompositionKeepsCaretWhileClientAttached) {
   EXPECT_TRUE(manager_.caret_created());
 }
 
-TEST_F(TextInputManagerTest, EndCompositionDestroysCaretWithoutClient) {
+TEST_F(TextInputManagerTest, CreateImeWindowDoesNotCreateCaretWithoutClient) {
+  manager_.CreateImeWindow();
+
+  EXPECT_TRUE(manager_.ime_active());
+  EXPECT_FALSE(manager_.text_client_attached());
+  EXPECT_FALSE(manager_.caret_created());
+}
+
+TEST_F(TextInputManagerTest, ClearClientThenEndCompositionLeavesCaretDestroyed) {
+  manager_.UpdateCaretRect(Rect{Point(10, 20), Size(5, 15)});
+  manager_.AbortComposing();
   manager_.CreateImeWindow();
   ASSERT_TRUE(manager_.ime_active());
-  ASSERT_TRUE(manager_.caret_created());
+  ASSERT_FALSE(manager_.caret_created());
 
   manager_.DestroyImeWindow();
 
@@ -122,6 +132,18 @@ TEST_F(TextInputManagerTest, CaretRectRestoresImeContext) {
 
   HIMC context = ImmGetContext(hwnd_);
   EXPECT_NE(context, nullptr);
+  if (context) {
+    ImmReleaseContext(hwnd_, context);
+  }
+}
+
+TEST_F(TextInputManagerTest, CreateImeWindowDoesNotRestoreImeWithoutClient) {
+  manager_.UpdateCaretRect(Rect{Point(10, 20), Size(5, 15)});
+  manager_.AbortComposing();
+  manager_.CreateImeWindow();
+
+  HIMC context = ImmGetContext(hwnd_);
+  EXPECT_EQ(context, nullptr);
   if (context) {
     ImmReleaseContext(hwnd_, context);
   }

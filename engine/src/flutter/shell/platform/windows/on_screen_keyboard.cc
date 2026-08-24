@@ -6,8 +6,8 @@
 
 #include <inputpaneinterop.h>
 #include <roapi.h>
-#include <winstring.h>
 #include <windows.ui.viewmanagement.h>
+#include <winstring.h>
 #include <wrl/client.h>
 #include <wrl/event.h>
 
@@ -171,6 +171,9 @@ void OnScreenKeyboardWin::Display(HWND hwnd) {
 }
 
 void OnScreenKeyboardWin::Dismiss(HWND hwnd) {
+  // Record hide intent even when |hwnd| is null so a later OS auto-show is
+  // rejected. Display still requires a window to TryShow.
+  want_visible_ = false;
   RequestVisibility(hwnd, false);
 }
 
@@ -287,8 +290,9 @@ bool OnScreenKeyboardWin::EnsureInputPane(HWND hwnd) {
           return S_OK;
         }
         const RECT screen = WinrtRectToScreenRect(occluded);
-        // InputPane is not agile; marshal before touching WeakPtr.
-        runner->RunNowOrPostTask([weak, screen]() {
+        // InputPane is not agile. Always post so TryHide is not invoked from
+        // inside the Showing handler (WinRT event reentrancy).
+        runner->PostTask([weak, screen]() {
           if (!weak) {
             return;
           }
@@ -298,9 +302,9 @@ bool OnScreenKeyboardWin::EnsureInputPane(HWND hwnd) {
       });
   auto hiding_handler = Callback<InputPaneVisibilityHandler>(
       [weak = weak_factory_.GetWeakPtr(), runner = task_runner_](
-          IInputPane* /*sender*/, IInputPaneVisibilityEventArgs* args) {
+          IInputPane* /*sender*/, IInputPaneVisibilityEventArgs* /*args*/) {
         RECT empty{};
-        runner->RunNowOrPostTask([weak, empty]() {
+        runner->PostTask([weak, empty]() {
           if (!weak) {
             return;
           }
@@ -332,21 +336,22 @@ bool OnScreenKeyboardWin::EnsureInputPane(HWND hwnd) {
   return true;
 }
 
-void OnScreenKeyboardWin::HandleInputPaneEvent(bool shown,
+void OnScreenKeyboardWin::HandleInputPaneEvent(bool pane_shown,
                                                const RECT& occluded_screen) {
   HWND hwnd = pane_session_ ? pane_session_->view_hwnd : pending_hwnd_;
-  if (shown && !want_visible_) {
-    // OS auto-invoked the pane after we dismissed it (touch on a non-field,
-    // navigation). Hide immediately; do not report occlusion.
+  if (pane_shown && !want_visible_) {
+    // OS auto-invoked the pane after Dismiss or a user SIP dismiss. Hide
+    // without reporting occlusion so request and inset observation stay
+    // decoupled.
     ApplyVisibility(hwnd, false);
     return;
   }
 
-  shown_ = shown;
-  if (!shown) {
+  shown_ = pane_shown;
+  if (!pane_shown) {
     want_visible_ = false;
   }
-  if (shown && hwnd) {
+  if (pane_shown && hwnd) {
     RECT client_screen{};
     if (MapClientRectToScreen(hwnd, &client_screen)) {
       physical_bottom_inset_ =

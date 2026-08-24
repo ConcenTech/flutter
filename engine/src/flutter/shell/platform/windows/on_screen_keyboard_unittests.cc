@@ -216,6 +216,10 @@ TEST(OnScreenKeyboardTest, UnsolicitedShowingHidesWhenNotWanted) {
   RecordingOnScreenKeyboard keyboard(&runner, &applies);
   HWND hwnd = DummyHwnd();
 
+  bool notified = false;
+  keyboard.SetVisibilityChangedCallback(
+      [&notified](bool, double) { notified = true; });
+
   keyboard.Dismiss(hwnd);
   applies.clear();
 
@@ -227,6 +231,26 @@ TEST(OnScreenKeyboardTest, UnsolicitedShowingHidesWhenNotWanted) {
   EXPECT_FALSE(applies[0].show);
   EXPECT_FALSE(keyboard.shown());
   EXPECT_EQ(keyboard.physical_bottom_inset(), 0.0);
+  EXPECT_FALSE(notified);
+}
+
+TEST(OnScreenKeyboardTest, DismissWithoutHwndRejectsUnsolicitedShowing) {
+  MockTaskRunner runner;
+  std::vector<ApplyCall> applies;
+  RecordingOnScreenKeyboard keyboard(&runner, &applies);
+  HWND hwnd = DummyHwnd();
+
+  keyboard.Display(hwnd);
+  keyboard.Dismiss(nullptr);
+  applies.clear();
+
+  RECT occluded{0, 400, 800, 600};
+  keyboard.HandleInputPaneEvent(true, occluded);
+
+  ASSERT_EQ(applies.size(), 1u);
+  EXPECT_EQ(applies[0].hwnd, hwnd);
+  EXPECT_FALSE(applies[0].show);
+  EXPECT_FALSE(keyboard.shown());
 }
 
 TEST(OnScreenKeyboardTest, RequestedShowingDoesNotHide) {
@@ -235,12 +259,23 @@ TEST(OnScreenKeyboardTest, RequestedShowingDoesNotHide) {
   RecordingOnScreenKeyboard keyboard(&runner, &applies);
   HWND hwnd = DummyHwnd();
 
+  bool notified = false;
+  bool reported_shown = false;
+  keyboard.SetVisibilityChangedCallback(
+      [&notified, &reported_shown](bool shown, double) {
+        notified = true;
+        reported_shown = shown;
+      });
+
   keyboard.Display(hwnd);
 
   RECT occluded{0, 400, 800, 600};
   keyboard.HandleInputPaneEvent(true, occluded);
 
   EXPECT_TRUE(applies.empty());
+  EXPECT_TRUE(keyboard.shown());
+  EXPECT_TRUE(notified);
+  EXPECT_TRUE(reported_shown);
 }
 
 TEST(OnScreenKeyboardTest, HidingClearsWantedVisible) {
@@ -254,11 +289,15 @@ TEST(OnScreenKeyboardTest, HidingClearsWantedVisible) {
   keyboard.HandleInputPaneEvent(false, empty);
   applies.clear();
 
+  EXPECT_FALSE(keyboard.shown());
+  EXPECT_EQ(keyboard.physical_bottom_inset(), 0.0);
+
   RECT occluded{0, 400, 800, 600};
   keyboard.HandleInputPaneEvent(true, occluded);
 
   ASSERT_EQ(applies.size(), 1u);
   EXPECT_FALSE(applies[0].show);
+  EXPECT_FALSE(keyboard.shown());
 }
 
 }  // namespace testing

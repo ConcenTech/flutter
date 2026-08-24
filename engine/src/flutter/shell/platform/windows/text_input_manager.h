@@ -37,7 +37,8 @@ class TextInputManager {
   // Creates a new IME window and system caret.
   //
   // This method should be invoked in response to the WM_IME_SETCONTEXT and
-  // WM_IME_STARTCOMPOSITION events.
+  // WM_IME_STARTCOMPOSITION events. IMM32 is re-associated and the caret is
+  // created only while a Flutter text client is attached.
   void CreateImeWindow();
 
   // Destroys the IME window. The system caret is kept if a text client is
@@ -112,7 +113,7 @@ class TextInputManager {
   void DestroySystemCaret();
 
   // Associates or clears the HWND's IMM32 context. Clearing it stops Windows
-  // from auto-invoking the touch keyboard after the text client is gone.
+  // from treating the HWND as a text session after TextInput.clearClient.
   void AssociateImeContext(bool enable);
 
   // The window with which the IME windows are associated.

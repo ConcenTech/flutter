@@ -60,8 +60,8 @@ class OnScreenKeyboard {
 //
 // Debounces Display/Dismiss on the platform |TaskRunner|, then drives WinRT
 // IInputPane2::TryShow / TryHide. Showing/Hiding update |shown| and the
-// bottom inset. Showing while not requested (OS auto-invoke) is immediately
-// TryHide'd so a dismissed keyboard stays closed.
+// bottom inset. An unsolicited Showing (OS auto-invoke) is rejected with
+// TryHide and does not report occlusion, so a dismissed keyboard stays closed.
 class OnScreenKeyboardWin : public OnScreenKeyboard {
  public:
   // Coalesces Display/Dismiss so field-to-field focus changes do not blink
@@ -95,18 +95,25 @@ class OnScreenKeyboardWin : public OnScreenKeyboard {
                                    const RECT& occluded_screen);
 
  protected:
-  // Applies a coalesced show or hide via IInputPane2. Failures are ignored.
+  // Applies a show or hide via IInputPane2. Failures are ignored.
+  //
+  // Used after the Display/Dismiss debounce and to reject unsolicited Showing.
   virtual void ApplyVisibility(HWND hwnd, bool show);
 
   // Invokes |callback_| with the current shown state and bottom inset.
   void NotifyVisibilityChanged();
 
+  // Handles an InputPane Showing (|pane_shown| true) or Hiding event.
+  //
   // |occluded_screen| is the InputPane OccludedRect in screen coordinates.
-  void HandleInputPaneEvent(bool shown, const RECT& occluded_screen);
+  // Must run on the platform thread. Tests call this to simulate pane events.
+  void HandleInputPaneEvent(bool pane_shown, const RECT& occluded_screen);
 
  private:
   struct InputPaneSession;
 
+  // Coalesces Display/Dismiss. Null |hwnd| is a no-op for TryShow/TryHide;
+  // Dismiss still records that the keyboard should stay hidden.
   void RequestVisibility(HWND hwnd, bool show);
 
   // Subscribes to InputPane Showing/Hiding for |hwnd|. No-op on COM/WinRT
@@ -115,10 +122,17 @@ class OnScreenKeyboardWin : public OnScreenKeyboard {
 
   TaskRunner* task_runner_;
   VisibilityChanged callback_;
+  // Incremented on each Display/Dismiss so stale debounce tasks no-op.
   uint64_t generation_ = 0;
+  // HWND of the last Display/Dismiss that had a non-null handle.
   HWND pending_hwnd_ = nullptr;
+  // Last coalesced Display/Dismiss action, applied after the debounce.
   bool pending_show_ = false;
+  // True after Display, false after Dismiss or a Hiding event. Distinct from
+  // |shown_| (observed pane state). Unsolicited Showing while this is false
+  // is rejected with TryHide and does not update insets.
   bool want_visible_ = false;
+  // Last observed InputPane visibility.
   bool shown_ = false;
   double physical_bottom_inset_ = 0.0;
   std::unique_ptr<InputPaneSession> pane_session_;
