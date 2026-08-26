@@ -259,8 +259,7 @@ TEST(OnScreenKeyboardTest, ShowingUpdatesInsetWithoutTryHide) {
 
   OnScreenKeyboardWin::DipRect occluded{0, 400, 800, 200};
   RECT view_client{0, 0, 800, 600};
-  keyboard.HandleVisibilityEvent(true, occluded, 1.0, POINT{0, 0},
-                                 view_client);
+  keyboard.HandleVisibilityEvent(true, occluded, 1.0, POINT{0, 0}, view_client);
 
   EXPECT_TRUE(shown);
   EXPECT_EQ(inset, 200.0);
@@ -276,8 +275,7 @@ TEST(OnScreenKeyboardTest, HidingClearsInset) {
 
   OnScreenKeyboardWin::DipRect occluded{0, 400, 800, 200};
   RECT view_client{0, 0, 800, 600};
-  keyboard.HandleVisibilityEvent(true, occluded, 1.0, POINT{0, 0},
-                                 view_client);
+  keyboard.HandleVisibilityEvent(true, occluded, 1.0, POINT{0, 0}, view_client);
   keyboard.HandleVisibilityEvent(false, OnScreenKeyboardWin::DipRect{}, 1.0,
                                  POINT{0, 0}, RECT{});
 

@@ -25,8 +25,7 @@ class FakeTsfDelegate : public TsfTextStoreDelegate {
     selection_ = TextRange(text.size());
   }
   void OnTsfComposeBegin() override { composing_ = true; }
-  void OnTsfComposeUpdate(const std::u16string& text,
-                          int cursor_pos) override {
+  void OnTsfComposeUpdate(const std::u16string& text, int cursor_pos) override {
     composing_text_ = text;
     cursor_pos_ = cursor_pos;
   }
@@ -60,8 +59,7 @@ TEST(TsfTextStoreTest, GetStatusSetsManualInputPaneFlag) {
 
 TEST(TsfTextStoreTest, GetStatusManualFlagIsDefault) {
   Microsoft::WRL::ComPtr<TsfTextStore> store;
-  HRESULT hr =
-      Microsoft::WRL::MakeAndInitialize<TsfTextStore>(&store, nullptr);
+  HRESULT hr = Microsoft::WRL::MakeAndInitialize<TsfTextStore>(&store, nullptr);
   ASSERT_EQ(hr, S_OK);
 
   TS_STATUS status{};
@@ -72,16 +70,14 @@ TEST(TsfTextStoreTest, GetStatusManualFlagIsDefault) {
 
 TEST(TsfTextStoreTest, GetStatusRejectsNull) {
   Microsoft::WRL::ComPtr<TsfTextStore> store;
-  HRESULT hr =
-      Microsoft::WRL::MakeAndInitialize<TsfTextStore>(&store, nullptr);
+  HRESULT hr = Microsoft::WRL::MakeAndInitialize<TsfTextStore>(&store, nullptr);
   ASSERT_EQ(hr, S_OK);
   EXPECT_EQ(store->GetStatus(nullptr), E_INVALIDARG);
 }
 
 TEST(TsfTextStoreTest, GetWndWithoutDelegateIsNull) {
   Microsoft::WRL::ComPtr<TsfTextStore> store;
-  HRESULT hr =
-      Microsoft::WRL::MakeAndInitialize<TsfTextStore>(&store, nullptr);
+  HRESULT hr = Microsoft::WRL::MakeAndInitialize<TsfTextStore>(&store, nullptr);
   ASSERT_EQ(hr, S_OK);
   HWND hwnd = reinterpret_cast<HWND>(1);
   TsViewCookie view = 0;

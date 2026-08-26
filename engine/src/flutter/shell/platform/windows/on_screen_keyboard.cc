@@ -36,8 +36,10 @@ using InputPaneVisibilityHandler =
                                                  InputPaneVisibilityEventArgs*>;
 
 using RoGetActivationFactoryFn = HRESULT(WINAPI*)(HSTRING, REFIID, void**);
-using WindowsCreateStringReferenceFn =
-    HRESULT(WINAPI*)(PCWSTR, UINT32, HSTRING_HEADER*, HSTRING*);
+using WindowsCreateStringReferenceFn = HRESULT(WINAPI*)(PCWSTR,
+                                                        UINT32,
+                                                        HSTRING_HEADER*,
+                                                        HSTRING*);
 
 HMODULE CombaseModule() {
   static HMODULE module = LoadLibraryW(L"combase.dll");
@@ -182,10 +184,10 @@ RECT OnScreenKeyboardWin::OccludedDipToPhysicalScreenRect(
   const double physical_width = occluded_dip.width * dpi_scale;
   const double physical_height = occluded_dip.height * dpi_scale;
   RECT result;
-  result.left = static_cast<LONG>(
-      std::lround(physical_x + root_client_origin_screen.x));
-  result.top = static_cast<LONG>(
-      std::lround(physical_y + root_client_origin_screen.y));
+  result.left =
+      static_cast<LONG>(std::lround(physical_x + root_client_origin_screen.x));
+  result.top =
+      static_cast<LONG>(std::lround(physical_y + root_client_origin_screen.y));
   result.right = static_cast<LONG>(
       std::lround(physical_x + physical_width + root_client_origin_screen.x));
   result.bottom = static_cast<LONG>(
@@ -204,8 +206,7 @@ double OnScreenKeyboardWin::ComputeBottomInset(
       std::min(view_client_screen.right, occluded_physical_screen.right);
   const LONG intersect_bottom =
       std::min(view_client_screen.bottom, occluded_physical_screen.bottom);
-  if (intersect_right <= intersect_left ||
-      intersect_bottom <= intersect_top) {
+  if (intersect_right <= intersect_left || intersect_bottom <= intersect_top) {
     return 0.0;
   }
 
@@ -322,9 +323,8 @@ bool OnScreenKeyboardWin::EnsureInputPane(HWND hwnd) {
             return;
           }
           HWND root = RootWindow(view);
-          const double scale =
-              static_cast<double>(GetDpiForHWND(root)) /
-              static_cast<double>(kDefaultDpi);
+          const double scale = static_cast<double>(GetDpiForHWND(root)) /
+                               static_cast<double>(kDefaultDpi);
           POINT origin{0, 0};
           ClientToScreen(root, &origin);
           RECT view_client{};

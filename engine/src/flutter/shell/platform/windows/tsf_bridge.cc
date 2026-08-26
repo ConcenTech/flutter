@@ -137,9 +137,8 @@ void TsfBridgeWin::FocusEditable(HWND hwnd, TsfTextStoreDelegate* delegate) {
     text_store_->SetDelegate(delegate);
   }
   Microsoft::WRL::ComPtr<ITfDocumentMgr> previous;
-  HRESULT hr =
-      thread_mgr_->AssociateFocus(hwnd, editable_document_mgr_.Get(),
-                                  &previous);
+  HRESULT hr = thread_mgr_->AssociateFocus(hwnd, editable_document_mgr_.Get(),
+                                           &previous);
   if (FAILED(hr)) {
     LogTsfFailure("AssociateFocus(editable)", hr);
   }

@@ -23,8 +23,7 @@ namespace flutter {
 namespace {
 
 // Bottom inset from the on-screen keyboard, clamped to [0, height].
-double ClampedKeyboardBottomInset(FlutterWindowsEngine* engine,
-                                  size_t height) {
+double ClampedKeyboardBottomInset(FlutterWindowsEngine* engine, size_t height) {
   double bottom = 0.0;
   if (OnScreenKeyboard* keyboard = engine->on_screen_keyboard()) {
     bottom = keyboard->physical_bottom_inset();

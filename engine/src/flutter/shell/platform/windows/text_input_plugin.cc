@@ -576,8 +576,7 @@ void TextInputPlugin::MaybeDisplayOnScreenKeyboard() {
     return;
   }
   HWND hwnd = GetClientWindowHandle();
-  if (!IsTouchOrPenPointer(last_pointer_kind_) ||
-      !ClientWindowHasFocus(hwnd)) {
+  if (!IsTouchOrPenPointer(last_pointer_kind_) || !ClientWindowHasFocus(hwnd)) {
     return;
   }
   on_screen_keyboard_->Display(hwnd);

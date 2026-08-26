@@ -5,10 +5,10 @@
 #ifndef FLUTTER_SHELL_PLATFORM_WINDOWS_TSF_TEXT_STORE_H_
 #define FLUTTER_SHELL_PLATFORM_WINDOWS_TSF_TEXT_STORE_H_
 
-#include <windows.h>
-#include <ole2.h>
 #include <msctf.h>
+#include <ole2.h>
 #include <textstor.h>
+#include <windows.h>
 #include <wrl/client.h>
 #include <wrl/implements.h>
 
