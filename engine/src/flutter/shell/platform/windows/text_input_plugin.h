@@ -5,6 +5,8 @@
 #ifndef FLUTTER_SHELL_PLATFORM_WINDOWS_TEXT_INPUT_PLUGIN_H_
 #define FLUTTER_SHELL_PLATFORM_WINDOWS_TEXT_INPUT_PLUGIN_H_
 
+#include <windows.h>
+
 #include <array>
 #include <map>
 #include <memory>
@@ -18,18 +20,25 @@
 #include "flutter/shell/platform/common/text_input_model.h"
 #include "flutter/shell/platform/embedder/embedder.h"
 #include "flutter/shell/platform/windows/keyboard_handler_base.h"
+#include "flutter/shell/platform/windows/tsf_text_store.h"
 
 namespace flutter {
 
 class FlutterWindowsEngine;
+class OnScreenKeyboard;
+class TsfBridge;
 
 // Implements a text input plugin.
 //
 // Specifically handles window events within windows.
-class TextInputPlugin {
+class TextInputPlugin : public TsfTextStoreDelegate {
  public:
+  // |on_screen_keyboard| and |tsf_bridge| may be null in tests. Ownership
+  // remains with the engine.
   TextInputPlugin(flutter::BinaryMessenger* messenger,
-                  FlutterWindowsEngine* engine);
+                  FlutterWindowsEngine* engine,
+                  OnScreenKeyboard* on_screen_keyboard = nullptr,
+                  TsfBridge* tsf_bridge = nullptr);
 
   virtual ~TextInputPlugin();
 
@@ -72,14 +81,39 @@ class TextInputPlugin {
 
   // Called when a view is removed from the engine.
   //
-  // If the removed view is the currently active view for text input, resets
-  // the active model and view id to prevent stale references. The implicit
-  // view is excluded from this reset.
+  // If the removed view is the currently active view for text input, dismisses
+  // the on-screen keyboard and resets the active model and view id to prevent
+  // stale references. The implicit view is excluded from this reset.
   void OnViewRemoved(FlutterViewId view_id);
+
+  // Records the device kind of the most recent pointer event.
+  //
+  // |TextInput.show| requests the on-screen keyboard only for touch or pen.
+  void SetLastPointerKind(FlutterPointerDeviceKind device_kind);
+
+  FlutterPointerDeviceKind last_pointer_kind() const {
+    return last_pointer_kind_;
+  }
+
+  // The on-screen keyboard, if one was injected.
+  OnScreenKeyboard* on_screen_keyboard() const { return on_screen_keyboard_; }
+
+  // |TsfTextStoreDelegate|
+  std::u16string GetTsfText() const override;
+  TextRange GetTsfSelection() const override;
+  void SetTsfSelection(const TextRange& range) override;
+  void ReplaceTsfText(const TextRange& range,
+                      const std::u16string& text) override;
+  void OnTsfComposeBegin() override;
+  void OnTsfComposeUpdate(const std::u16string& text, int cursor_pos) override;
+  void OnTsfComposeEnd() override;
+  Rect GetTsfCaretRect() const override;
+  HWND GetTsfWindowHandle() const override;
 
  private:
   // Allows modifying the TextInputPlugin in tests.
   friend class TextInputPluginModifier;
+  friend class EngineModifier;
 
   // Sends the current state of the given model to the Flutter engine.
   void SendStateUpdate(const TextInputModel& model);
@@ -100,11 +134,47 @@ class TextInputPlugin {
   // cursor rect in the PipelineOwner root coordinate system.
   Rect GetCursorRect() const;
 
+  // HWND of the active text-input view, or null if the view is missing.
+  HWND GetClientWindowHandle() const;
+
+  // Whether |hwnd| currently has Win32 focus.
+  bool ClientWindowHasFocus(HWND hwnd) const;
+
+  // Requests the on-screen keyboard if a client is attached, the last pointer
+  // was touch or pen, and the client HWND has focus.
+  void MaybeDisplayOnScreenKeyboard();
+
+  // Dismisses the on-screen keyboard if no text client is attached.
+  void MaybeDismissOnScreenKeyboard();
+
+  // Dismisses the on-screen keyboard for the active client view, if any.
+  void DismissOnScreenKeyboard();
+
+  // Focuses the TSF editable or non-editable document for the active view.
+  void FocusTsfEditable();
+  void FocusTsfNonEditable();
+
   // The MethodChannel used for communication with the Flutter engine.
   std::unique_ptr<flutter::MethodChannel<rapidjson::Document>> channel_;
 
   // The associated |FlutterWindowsEngine|.
   FlutterWindowsEngine* engine_;
+
+  // The on-screen keyboard used to show and hide the Windows touch keyboard.
+  //
+  // May be null in tests.
+  OnScreenKeyboard* on_screen_keyboard_ = nullptr;
+
+  // TSF IME bridge. May be null in tests or when TSF is unavailable.
+  TsfBridge* tsf_bridge_ = nullptr;
+
+  // Device kind of the last pointer event. Mouse/unknown does not Display.
+  FlutterPointerDeviceKind last_pointer_kind_ = kFlutterPointerDeviceKindMouse;
+
+  // When true, |ClientWindowHasFocus| uses |window_has_focus_override_|
+  // instead of GetFocus(). Tests set this via TextInputPluginModifier.
+  bool has_window_focus_override_ = false;
+  bool window_has_focus_override_ = false;
 
   // The active client id.
   int client_id_;
