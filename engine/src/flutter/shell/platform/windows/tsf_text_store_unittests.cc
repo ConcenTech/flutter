@@ -7,7 +7,6 @@
 #include <wrl/client.h>
 #include <wrl/implements.h>
 
-#include "flutter/shell/geometry/geometry.h"
 #include "gtest/gtest.h"
 
 namespace flutter {
