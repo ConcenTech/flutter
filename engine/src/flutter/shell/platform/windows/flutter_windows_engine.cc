@@ -994,9 +994,8 @@ FlutterWindowsEngine::CreateKeyboardKeyHandler(
 
 std::unique_ptr<TextInputPlugin> FlutterWindowsEngine::CreateTextInputPlugin(
     BinaryMessenger* messenger) {
-  return std::make_unique<TextInputPlugin>(messenger, this,
-                                           on_screen_keyboard_.get(),
-                                           tsf_bridge_.get());
+  return std::make_unique<TextInputPlugin>(
+      messenger, this, on_screen_keyboard_.get(), tsf_bridge_.get());
 }
 
 std::unique_ptr<OnScreenKeyboard>
