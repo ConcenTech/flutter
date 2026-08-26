@@ -98,10 +98,9 @@ class OnScreenKeyboardWin : public OnScreenKeyboard {
 
   // Converts |occluded_dip| (root-window client DIPs) to a physical screen
   // RECT: multiply by |dpi_scale|, then add |root_client_origin_screen|.
-  static RECT OccludedDipToPhysicalScreenRect(
-      const DipRect& occluded_dip,
-      double dpi_scale,
-      POINT root_client_origin_screen);
+  static RECT OccludedDipToPhysicalScreenRect(const DipRect& occluded_dip,
+                                              double dpi_scale,
+                                              POINT root_client_origin_screen);
 
   // Bottom inset in physical pixels: the occluded strip at the bottom of
   // |view_client_screen|, clamped to [0, client height]. Returns 0 when the
@@ -110,11 +109,10 @@ class OnScreenKeyboardWin : public OnScreenKeyboard {
                                    const RECT& occluded_physical_screen);
 
   // Combines DIP → physical conversion with |ComputeBottomInset|.
-  static double ComputePhysicalBottomInset(
-      const DipRect& occluded_dip,
-      double dpi_scale,
-      POINT root_client_origin_screen,
-      const RECT& view_client_screen);
+  static double ComputePhysicalBottomInset(const DipRect& occluded_dip,
+                                           double dpi_scale,
+                                           POINT root_client_origin_screen,
+                                           const RECT& view_client_screen);
 
   // Applies a Showing/Hiding observation. |occluded_dip| is ignored when
   // |shown| is false. Exposed for tests.

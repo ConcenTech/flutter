@@ -4,9 +4,9 @@
 
 #include "flutter/shell/platform/windows/tsf_text_store.h"
 
+#include <olectl.h>
 #include <algorithm>
 #include <cmath>
-#include <olectl.h>
 
 #include "flutter/fml/logging.h"
 
@@ -129,8 +129,7 @@ STDMETHODIMP TsfTextStore::UnadviseSink(IUnknown* punk) {
   return S_OK;
 }
 
-STDMETHODIMP TsfTextStore::RequestLock(DWORD dwLockFlags,
-                                       HRESULT* phrSession) {
+STDMETHODIMP TsfTextStore::RequestLock(DWORD dwLockFlags, HRESULT* phrSession) {
   if (!phrSession) {
     return E_INVALIDARG;
   }
@@ -562,8 +561,9 @@ STDMETHODIMP TsfTextStore::GetWnd(TsViewCookie vcView, HWND* phwnd) {
   return S_OK;
 }
 
-STDMETHODIMP TsfTextStore::OnStartComposition(ITfCompositionView* /*pComposition*/,
-                                              BOOL* pfOk) {
+STDMETHODIMP TsfTextStore::OnStartComposition(
+    ITfCompositionView* /*pComposition*/,
+    BOOL* pfOk) {
   if (!pfOk) {
     return E_INVALIDARG;
   }
@@ -575,8 +575,9 @@ STDMETHODIMP TsfTextStore::OnStartComposition(ITfCompositionView* /*pComposition
   return S_OK;
 }
 
-STDMETHODIMP TsfTextStore::OnUpdateComposition(ITfCompositionView* /*pComposition*/,
-                                               ITfRange* /*pRangeNew*/) {
+STDMETHODIMP TsfTextStore::OnUpdateComposition(
+    ITfCompositionView* /*pComposition*/,
+    ITfRange* /*pRangeNew*/) {
   return S_OK;
 }
 
