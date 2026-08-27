@@ -100,6 +100,16 @@ TEST(TsfTextStoreTest, EmptyStoreRequestLockFails) {
   EXPECT_EQ(session, E_FAIL);
 }
 
+TEST(TsfTextStoreTest, RequestLockWithoutDelegateFails) {
+  Microsoft::WRL::ComPtr<TsfTextStore> store;
+  HRESULT hr = Microsoft::WRL::MakeAndInitialize<TsfTextStore>(&store, nullptr);
+  ASSERT_EQ(hr, S_OK);
+
+  HRESULT session = S_OK;
+  EXPECT_EQ(store->RequestLock(TS_LF_READ, &session), E_UNEXPECTED);
+  EXPECT_EQ(session, E_FAIL);
+}
+
 TEST(TsfTextStoreTest, GetWndWithoutDelegateIsNull) {
   Microsoft::WRL::ComPtr<TsfTextStore> store;
   HRESULT hr = Microsoft::WRL::MakeAndInitialize<TsfTextStore>(&store, nullptr);

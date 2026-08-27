@@ -143,6 +143,11 @@ STDMETHODIMP TsfTextStore::RequestLock(DWORD dwLockFlags, HRESULT* phrSession) {
   if (is_empty_text_store_) {
     return E_FAIL;
   }
+  // Chromium returns E_UNEXPECTED when no TextInputClient is attached, and
+  // E_FAIL when the client type is already NONE (crbug.com/1483978).
+  if (!delegate_) {
+    return E_UNEXPECTED;
+  }
   if (!sink_) {
     return E_UNEXPECTED;
   }

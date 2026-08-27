@@ -18,12 +18,40 @@ namespace flutter {
 
 // Owns the TSF thread manager and the editable / non-editable documents.
 //
-// Non-editable focus matches Chromium TEXT_INPUT_TYPE_NONE:
-// - Windows 10: a document manager with no context.
-// - Windows 11: a dummy ITextStoreACP with KEYBOARD_DISABLED and
-//   EMPTYCONTEXT compartments, TS_SD_READONLY, and denied RequestLock.
-// Leaving an editor always SetFocuses the empty document so OS SIP
-// heuristics do not keep treating the HWND as an editor.
+// Chromium (ui/base/ime/win/tsf_bridge.cc, tsf_text_store.cc, and
+// on_screen_keyboard_display_manager_input_pane.cc) splits Windows tablet
+// keyboard into two layers. This type is the TSF / IME layer. InputPane
+// TryShow / TryHide is the visibility layer (OnScreenKeyboard).
+//
+// HWND association vs thread focus (the gap that reopens the SIP):
+//
+// Chromium OnTextInputTypeChanged:
+//   TEXT_INPUT_TYPE_NONE → ITfThreadMgr::AssociateFocus(hwnd, empty_doc)
+//       only. AssociateFocus SetFocuses internally; they never call both.
+//   any editor type     → ITfThreadMgr::SetFocus(editable_doc) only.
+//       They never AssociateFocus the editable document onto the HWND.
+//
+// Windows SIP heuristics look at the document associated with the HWND, not
+// at thread focus. Binding the editable store to the HWND (what we used to
+// do) makes every later tap in the window look like an editor, so the OS
+// re-shows the keyboard after pop / button / slider. Chromium avoids that
+// by associating the HWND only with NONE (Win11 dummy store, or a Win10
+// document with no context).
+//
+// FocusEditable  = Chromium non-NONE: SetFocus(editable) only.
+// FocusNonEditable = Chromium NONE: AssociateFocus(hwnd, empty) only.
+//
+// Win11 empty store: probe ITfThreadMgr for GUID_COMPARTMENT_EMPTYCONTEXT,
+// then a dummy ITextStoreACP with KEYBOARD_DISABLED + EMPTYCONTEXT
+// compartments, TS_SD_READONLY, and denied RequestLock. Win10: empty
+// document manager with no context.
+//
+// Flutter mapping (framework does not blur on tap-outside):
+//   setClient / show after a pointer on the field → FocusEditable
+//   clearClient / pointer that misses the field   → FocusNonEditable
+//   InputPane Showing / Hiding                    → do not change TSF
+//       (Chromium never updates TSF from InputPane events; hide+SetFocus
+//       re-shows the SIP).
 class TsfBridge {
  public:
   virtual ~TsfBridge() = default;
@@ -31,13 +59,13 @@ class TsfBridge {
   // True if TSF and COM initialized successfully.
   virtual bool available() const = 0;
 
-  // Focuses the editable text store on |hwnd|. No-op if TSF is unavailable
-  // or |hwnd| is null.
+  // Chromium non-NONE: SetFocus the editable document. Does not AssociateFocus
+  // that document onto |hwnd|. No-op if TSF is unavailable or |hwnd| is null.
   virtual void FocusEditable(HWND hwnd, TsfTextStoreDelegate* delegate) = 0;
 
-  // Associates the non-editable document with |hwnd| and SetFocuses it.
-  // No-op if TSF is unavailable. Null |hwnd| still SetFocuses the empty
-  // document so OS SIP heuristics stop treating the HWND as an editor.
+  // Chromium NONE: AssociateFocus |hwnd| to the empty document. Does not also
+  // call SetFocus. No-op if TSF is unavailable. Null |hwnd| uses the last
+  // associated HWND, or SetFocus(empty) if there is none.
   virtual void FocusNonEditable(HWND hwnd) = 0;
 
   // Aborts any active TSF composition.
