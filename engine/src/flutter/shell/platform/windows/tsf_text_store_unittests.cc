@@ -75,6 +75,31 @@ TEST(TsfTextStoreTest, GetStatusRejectsNull) {
   EXPECT_EQ(store->GetStatus(nullptr), E_INVALIDARG);
 }
 
+TEST(TsfTextStoreTest, EmptyStoreGetStatusSetsReadonly) {
+  Microsoft::WRL::ComPtr<TsfTextStore> store;
+  HRESULT hr = Microsoft::WRL::MakeAndInitialize<TsfTextStore>(&store, nullptr);
+  ASSERT_EQ(hr, S_OK);
+  store->UseEmptyTextStore(true);
+
+  TS_STATUS status{};
+  EXPECT_EQ(store->GetStatus(&status), S_OK);
+  EXPECT_NE(status.dwDynamicFlags & TS_SD_INPUTPANEMANUALDISPLAYENABLE, 0u);
+  EXPECT_NE(status.dwDynamicFlags & TS_SD_READONLY, 0u);
+  EXPECT_NE(status.dwStaticFlags & TS_SS_NOHIDDENTEXT, 0u);
+  EXPECT_NE(status.dwStaticFlags & TS_SS_TRANSITORY, 0u);
+}
+
+TEST(TsfTextStoreTest, EmptyStoreRequestLockFails) {
+  Microsoft::WRL::ComPtr<TsfTextStore> store;
+  HRESULT hr = Microsoft::WRL::MakeAndInitialize<TsfTextStore>(&store, nullptr);
+  ASSERT_EQ(hr, S_OK);
+  store->UseEmptyTextStore(true);
+
+  HRESULT session = S_OK;
+  EXPECT_EQ(store->RequestLock(TS_LF_READ, &session), E_FAIL);
+  EXPECT_EQ(session, E_FAIL);
+}
+
 TEST(TsfTextStoreTest, GetWndWithoutDelegateIsNull) {
   Microsoft::WRL::ComPtr<TsfTextStore> store;
   HRESULT hr = Microsoft::WRL::MakeAndInitialize<TsfTextStore>(&store, nullptr);

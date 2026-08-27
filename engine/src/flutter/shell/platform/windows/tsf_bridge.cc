@@ -33,7 +33,9 @@ TsfBridgeWin::TsfBridgeWin() {
 }
 
 TsfBridgeWin::~TsfBridgeWin() {
-  DestroyCaretIfNeeded();
+  if (empty_context_ && empty_document_mgr_) {
+    empty_document_mgr_->Pop(TF_POPF_ALL);
+  }
   if (editable_document_mgr_) {
     editable_document_mgr_->Pop(TF_POPF_ALL);
   }
@@ -75,6 +77,7 @@ bool TsfBridgeWin::Initialize() {
     thread_mgr_.Reset();
     return false;
   }
+  MaybeInitializeEmptyTextStore();
 
   hr = thread_mgr_->CreateDocumentMgr(&editable_document_mgr_);
   if (FAILED(hr) || !editable_document_mgr_) {
@@ -114,19 +117,78 @@ bool TsfBridgeWin::Initialize() {
   return true;
 }
 
-void TsfBridgeWin::CreateCaretIfNeeded(HWND hwnd) {
-  if (!hwnd || !IsWindow(hwnd)) {
+void TsfBridgeWin::MaybeInitializeEmptyTextStore() {
+  // Chromium probes Win11 empty-store support by QIing the thread manager
+  // for GUID_COMPARTMENT_EMPTYCONTEXT. Failure means the Win10 path: a
+  // document manager with no context.
+  Microsoft::WRL::ComPtr<IUnknown> flag_empty_context;
+  HRESULT hr = thread_mgr_->QueryInterface(
+      GUID_COMPARTMENT_EMPTYCONTEXT,
+      reinterpret_cast<void**>(flag_empty_context.ReleaseAndGetAddressOf()));
+  if (FAILED(hr) || !flag_empty_context) {
     return;
   }
-  ::CreateCaret(hwnd, nullptr, 1, 1);
-  caret_created_ = true;
+
+  hr = Microsoft::WRL::MakeAndInitialize<TsfTextStore>(&empty_text_store_,
+                                                       nullptr);
+  if (FAILED(hr) || !empty_text_store_) {
+    LogTsfFailure("TsfTextStore(empty)", hr);
+    empty_text_store_.Reset();
+    return;
+  }
+  empty_text_store_->UseEmptyTextStore(true);
+
+  hr = empty_document_mgr_->CreateContext(
+      client_id_, 0, static_cast<ITextStoreACP*>(empty_text_store_.Get()),
+      &empty_context_, &empty_edit_cookie_);
+  if (FAILED(hr) || !empty_context_) {
+    LogTsfFailure("CreateContext(empty)", hr);
+    empty_context_.Reset();
+    empty_text_store_.Reset();
+    return;
+  }
+
+  hr = empty_document_mgr_->Push(empty_context_.Get());
+  if (FAILED(hr)) {
+    LogTsfFailure("Push(empty)", hr);
+    empty_context_.Reset();
+    empty_text_store_.Reset();
+    return;
+  }
+
+  hr = InitializeDisabledContext(empty_context_.Get());
+  if (FAILED(hr)) {
+    LogTsfFailure("InitializeDisabledContext", hr);
+  }
 }
 
-void TsfBridgeWin::DestroyCaretIfNeeded() {
-  if (caret_created_) {
-    ::DestroyCaret();
-    caret_created_ = false;
+HRESULT TsfBridgeWin::InitializeDisabledContext(ITfContext* context) {
+  Microsoft::WRL::ComPtr<ITfCompartmentMgr> compartment_mgr;
+  HRESULT hr = context->QueryInterface(IID_PPV_ARGS(&compartment_mgr));
+  if (FAILED(hr) || !compartment_mgr) {
+    return FAILED(hr) ? hr : E_FAIL;
   }
+
+  Microsoft::WRL::ComPtr<ITfCompartment> disabled;
+  hr = compartment_mgr->GetCompartment(GUID_COMPARTMENT_KEYBOARD_DISABLED,
+                                       &disabled);
+  if (FAILED(hr) || !disabled) {
+    return FAILED(hr) ? hr : E_FAIL;
+  }
+  VARIANT disabled_value{.vt = VT_I4, .lVal = 1};
+  hr = disabled->SetValue(client_id_, &disabled_value);
+  if (FAILED(hr)) {
+    return hr;
+  }
+
+  Microsoft::WRL::ComPtr<ITfCompartment> empty_context;
+  hr = compartment_mgr->GetCompartment(GUID_COMPARTMENT_EMPTYCONTEXT,
+                                       &empty_context);
+  if (FAILED(hr) || !empty_context) {
+    return FAILED(hr) ? hr : E_FAIL;
+  }
+  VARIANT empty_value{.vt = VT_I4, .lVal = 1};
+  return empty_context->SetValue(client_id_, &empty_value);
 }
 
 void TsfBridgeWin::FocusEditable(HWND hwnd, TsfTextStoreDelegate* delegate) {
@@ -147,7 +209,6 @@ void TsfBridgeWin::FocusEditable(HWND hwnd, TsfTextStoreDelegate* delegate) {
     LogTsfFailure("SetFocus(editable)", hr);
   }
   associated_hwnd_ = hwnd;
-  CreateCaretIfNeeded(hwnd);
 }
 
 void TsfBridgeWin::FocusNonEditable(HWND hwnd) {
@@ -157,17 +218,23 @@ void TsfBridgeWin::FocusNonEditable(HWND hwnd) {
   if (text_store_) {
     text_store_->SetDelegate(nullptr);
   }
-  DestroyCaretIfNeeded();
-  if (hwnd == nullptr) {
-    associated_hwnd_ = nullptr;
-    return;
-  }
-  Microsoft::WRL::ComPtr<ITfDocumentMgr> previous;
-  // Win10 path: associate a document manager with no context.
-  HRESULT hr =
-      thread_mgr_->AssociateFocus(hwnd, empty_document_mgr_.Get(), &previous);
+
+  // Always SetFocus the NONE document. AssociateFocus on a context-less
+  // document does not reliably move TSF thread focus off the editable
+  // store, so OS SIP heuristics keep treating the HWND as an editor.
+  HRESULT hr = thread_mgr_->SetFocus(empty_document_mgr_.Get());
   if (FAILED(hr)) {
-    LogTsfFailure("AssociateFocus(empty)", hr);
+    LogTsfFailure("SetFocus(empty)", hr);
+  }
+
+  HWND associate_hwnd = hwnd != nullptr ? hwnd : associated_hwnd_;
+  if (associate_hwnd != nullptr) {
+    Microsoft::WRL::ComPtr<ITfDocumentMgr> previous;
+    hr = thread_mgr_->AssociateFocus(associate_hwnd, empty_document_mgr_.Get(),
+                                     &previous);
+    if (FAILED(hr)) {
+      LogTsfFailure("AssociateFocus(empty)", hr);
+    }
   }
   associated_hwnd_ = hwnd;
 }

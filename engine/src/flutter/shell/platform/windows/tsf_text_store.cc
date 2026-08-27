@@ -26,6 +26,10 @@ void TsfTextStore::SetDelegate(TsfTextStoreDelegate* delegate) {
   cache_valid_ = false;
 }
 
+void TsfTextStore::UseEmptyTextStore(bool enabled) {
+  is_empty_text_store_ = enabled;
+}
+
 void TsfTextStore::NotifyTextChanged() {
   cache_valid_ = false;
   if (!sink_ || !(advise_mask_ & TS_AS_TEXT_CHANGE)) {
@@ -134,6 +138,11 @@ STDMETHODIMP TsfTextStore::RequestLock(DWORD dwLockFlags, HRESULT* phrSession) {
     return E_INVALIDARG;
   }
   *phrSession = E_FAIL;
+  // Chromium: deny locks on the Win11 dummy NONE store so TSF cannot treat
+  // the HWND as an editor.
+  if (is_empty_text_store_) {
+    return E_FAIL;
+  }
   if (!sink_) {
     return E_UNEXPECTED;
   }
@@ -167,6 +176,9 @@ STDMETHODIMP TsfTextStore::GetStatus(TS_STATUS* pdcs) {
     return E_INVALIDARG;
   }
   pdcs->dwDynamicFlags = TS_SD_INPUTPANEMANUALDISPLAYENABLE;
+  if (is_empty_text_store_) {
+    pdcs->dwDynamicFlags |= TS_SD_READONLY;
+  }
   pdcs->dwStaticFlags = TS_SS_NOHIDDENTEXT | TS_SS_TRANSITORY;
   return S_OK;
 }
@@ -209,7 +221,7 @@ STDMETHODIMP TsfTextStore::GetSelection(ULONG ulIndex,
   pSelection[0].acpStart = static_cast<LONG>(selection.start());
   pSelection[0].acpEnd = static_cast<LONG>(selection.end());
   pSelection[0].style.ase = selection.reversed() ? TS_AE_START : TS_AE_END;
-  pSelection[0].style.interimChar = FALSE;
+  pSelection[0].style.fInterimChar = FALSE;
   *pcFetched = 1;
   return S_OK;
 }
