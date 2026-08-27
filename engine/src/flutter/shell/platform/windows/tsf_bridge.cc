@@ -198,13 +198,10 @@ void TsfBridgeWin::FocusEditable(HWND hwnd, TsfTextStoreDelegate* delegate) {
   if (text_store_) {
     text_store_->SetDelegate(delegate);
   }
-  Microsoft::WRL::ComPtr<ITfDocumentMgr> previous;
-  HRESULT hr = thread_mgr_->AssociateFocus(hwnd, editable_document_mgr_.Get(),
-                                           &previous);
-  if (FAILED(hr)) {
-    LogTsfFailure("AssociateFocus(editable)", hr);
-  }
-  hr = thread_mgr_->SetFocus(editable_document_mgr_.Get());
+  // Chromium non-NONE: SetFocus only. AssociateFocus of the editable
+  // document onto the HWND is what makes Windows SIP heuristics treat
+  // every later tap in the window as an editor.
+  HRESULT hr = thread_mgr_->SetFocus(editable_document_mgr_.Get());
   if (FAILED(hr)) {
     LogTsfFailure("SetFocus(editable)", hr);
   }
@@ -219,21 +216,21 @@ void TsfBridgeWin::FocusNonEditable(HWND hwnd) {
     text_store_->SetDelegate(nullptr);
   }
 
-  // Always SetFocus the NONE document. AssociateFocus on a context-less
-  // document does not reliably move TSF thread focus off the editable
-  // store, so OS SIP heuristics keep treating the HWND as an editor.
-  HRESULT hr = thread_mgr_->SetFocus(empty_document_mgr_.Get());
-  if (FAILED(hr)) {
-    LogTsfFailure("SetFocus(empty)", hr);
-  }
-
+  // Chromium TEXT_INPUT_TYPE_NONE: AssociateFocus only. It SetFocuses
+  // internally. Calling SetFocus as well notifies TSF twice and can
+  // re-invoke the SIP.
   HWND associate_hwnd = hwnd != nullptr ? hwnd : associated_hwnd_;
   if (associate_hwnd != nullptr) {
     Microsoft::WRL::ComPtr<ITfDocumentMgr> previous;
-    hr = thread_mgr_->AssociateFocus(associate_hwnd, empty_document_mgr_.Get(),
-                                     &previous);
+    HRESULT hr = thread_mgr_->AssociateFocus(
+        associate_hwnd, empty_document_mgr_.Get(), &previous);
     if (FAILED(hr)) {
       LogTsfFailure("AssociateFocus(empty)", hr);
+    }
+  } else {
+    HRESULT hr = thread_mgr_->SetFocus(empty_document_mgr_.Get());
+    if (FAILED(hr)) {
+      LogTsfFailure("SetFocus(empty)", hr);
     }
   }
   associated_hwnd_ = hwnd;
