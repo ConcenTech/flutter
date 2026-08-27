@@ -160,11 +160,26 @@ void OnScreenKeyboardWin::SetVisibilityChangedCallback(
 }
 
 void OnScreenKeyboardWin::Display(HWND hwnd) {
+  if (suppress_display_) {
+    return;
+  }
   RequestVisibility(hwnd, true);
 }
 
 void OnScreenKeyboardWin::Dismiss(HWND hwnd) {
   RequestVisibility(hwnd, false);
+}
+
+void OnScreenKeyboardWin::OnUserGesture() {
+  suppress_display_ = false;
+}
+
+void OnScreenKeyboardWin::OnClientCleared() {
+  CancelPendingDisplay();
+}
+
+bool OnScreenKeyboardWin::display_suppressed() const {
+  return suppress_display_;
 }
 
 bool OnScreenKeyboardWin::shown() const {
@@ -266,15 +281,29 @@ void OnScreenKeyboardWin::RequestVisibility(HWND hwnd, bool show) {
 
   pending_hwnd_ = hwnd;
   pending_show_ = show;
+  if (!show) {
+    hide_requested_ = true;
+  }
   const uint64_t generation = ++generation_;
   task_runner_->PostDelayedTask(
       [weak = weak_factory_.GetWeakPtr(), generation]() {
         if (!weak || generation != weak->generation_) {
           return;
         }
-        weak->ApplyVisibility(weak->pending_hwnd_, weak->pending_show_);
+        const bool show = weak->pending_show_;
+        const HWND hwnd = weak->pending_hwnd_;
+        weak->pending_show_ = false;
+        weak->ApplyVisibility(hwnd, show);
       },
       kDisplayDismissDebounce);
+}
+
+void OnScreenKeyboardWin::CancelPendingDisplay() {
+  if (!pending_show_) {
+    return;
+  }
+  ++generation_;
+  pending_show_ = false;
 }
 
 bool OnScreenKeyboardWin::EnsureInputPane(HWND hwnd) {
@@ -381,9 +410,20 @@ void OnScreenKeyboardWin::HandleVisibilityEvent(
     const RECT& view_client_screen) {
   shown_ = shown;
   if (shown) {
+    // Do not clear suppress_display_. An OS auto-show must not unlock
+    // TryShow; only OnUserGesture (a pointer event) does.
+    hide_requested_ = false;
     physical_bottom_inset_ = ComputePhysicalBottomInset(
         occluded_dip, dpi_scale, root_client_origin_screen, view_client_screen);
   } else {
+    const bool hide_was_requested = hide_requested_;
+    hide_requested_ = false;
+    if (!hide_was_requested) {
+      // The user dismissed the InputPane (taskbar, tap on the SIP, etc.).
+      // Do not TryShow again until a new pointer gesture.
+      suppress_display_ = true;
+      CancelPendingDisplay();
+    }
     physical_bottom_inset_ = 0.0;
   }
   NotifyVisibilityChanged();

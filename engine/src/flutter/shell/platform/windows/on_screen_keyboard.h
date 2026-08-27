@@ -46,6 +46,22 @@ class OnScreenKeyboard {
   // No-op if |hwnd| is null.
   virtual void Dismiss(HWND hwnd) = 0;
 
+  // Clears display suppression after a user pointer event.
+  //
+  // A user dismiss of the InputPane (Hiding without a matching Dismiss)
+  // suppresses Display until a later pointer-driven editing session
+  // (setClient / show after a new pointer, not the dismiss tap).
+  virtual void OnUserGesture() = 0;
+
+  // Cancels a pending Display. Does not Dismiss.
+  //
+  // Called from TextInput.clearClient so a debounced TryShow cannot run
+  // after the text client is gone.
+  virtual void OnClientCleared() = 0;
+
+  // True after a user dismiss until |OnUserGesture|.
+  virtual bool display_suppressed() const = 0;
+
   // Returns whether the on-screen keyboard is currently shown.
   virtual bool shown() const = 0;
 
@@ -91,6 +107,15 @@ class OnScreenKeyboardWin : public OnScreenKeyboard {
   void Dismiss(HWND hwnd) override;
 
   // |OnScreenKeyboard|
+  void OnUserGesture() override;
+
+  // |OnScreenKeyboard|
+  void OnClientCleared() override;
+
+  // |OnScreenKeyboard|
+  bool display_suppressed() const override;
+
+  // |OnScreenKeyboard|
   bool shown() const override;
 
   // |OnScreenKeyboard|
@@ -134,6 +159,9 @@ class OnScreenKeyboardWin : public OnScreenKeyboard {
 
   void RequestVisibility(HWND hwnd, bool show);
 
+  // Drops a queued Display without calling TryHide.
+  void CancelPendingDisplay();
+
   // Subscribes to InputPane Showing/Hiding for |hwnd|. No-op on COM/WinRT
   // failure (CO_E_NOTINITIALIZED, REGDB_E_CLASSNOTREG, invalid HWND).
   bool EnsureInputPane(HWND hwnd);
@@ -143,6 +171,8 @@ class OnScreenKeyboardWin : public OnScreenKeyboard {
   uint64_t generation_ = 0;
   HWND pending_hwnd_ = nullptr;
   bool pending_show_ = false;
+  bool hide_requested_ = false;
+  bool suppress_display_ = false;
   bool shown_ = false;
   double physical_bottom_inset_ = 0.0;
   std::unique_ptr<InputPaneSession> pane_session_;

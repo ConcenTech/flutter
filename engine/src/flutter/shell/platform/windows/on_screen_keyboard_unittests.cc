@@ -300,5 +300,107 @@ TEST(OnScreenKeyboardTest, InvalidHwndDoesNotCrash) {
   EXPECT_FALSE(called);
 }
 
+TEST(OnScreenKeyboardTest, UserHideSuppressesDisplayUntilPointer) {
+  MockTaskRunner runner;
+  std::vector<ApplyCall> applies;
+  RecordingOnScreenKeyboard keyboard(&runner, &applies);
+  HWND hwnd = DummyHwnd();
+
+  keyboard.HandleVisibilityEvent(false, OnScreenKeyboardWin::DipRect{}, 1.0,
+                                 POINT{0, 0}, RECT{});
+
+  keyboard.Display(hwnd);
+  runner.AdvanceTime(OnScreenKeyboardWin::kDisplayDismissDebounce);
+  runner.SimulateTimerAwake();
+  EXPECT_TRUE(applies.empty());
+
+  keyboard.OnUserGesture();
+  keyboard.Display(hwnd);
+  runner.AdvanceTime(OnScreenKeyboardWin::kDisplayDismissDebounce);
+  runner.SimulateTimerAwake();
+
+  ASSERT_EQ(applies.size(), 1u);
+  EXPECT_TRUE(applies[0].show);
+}
+
+TEST(OnScreenKeyboardTest, RequestedHideDoesNotSuppressDisplay) {
+  MockTaskRunner runner;
+  std::vector<ApplyCall> applies;
+  RecordingOnScreenKeyboard keyboard(&runner, &applies);
+  HWND hwnd = DummyHwnd();
+
+  keyboard.Display(hwnd);
+  runner.AdvanceTime(OnScreenKeyboardWin::kDisplayDismissDebounce);
+  runner.SimulateTimerAwake();
+  applies.clear();
+
+  keyboard.Dismiss(hwnd);
+  keyboard.HandleVisibilityEvent(false, OnScreenKeyboardWin::DipRect{}, 1.0,
+                                 POINT{0, 0}, RECT{});
+  runner.AdvanceTime(OnScreenKeyboardWin::kDisplayDismissDebounce);
+  runner.SimulateTimerAwake();
+  applies.clear();
+
+  keyboard.Display(hwnd);
+  runner.AdvanceTime(OnScreenKeyboardWin::kDisplayDismissDebounce);
+  runner.SimulateTimerAwake();
+
+  ASSERT_EQ(applies.size(), 1u);
+  EXPECT_TRUE(applies[0].show);
+}
+
+TEST(OnScreenKeyboardTest, ClientClearedCancelsPendingDisplay) {
+  MockTaskRunner runner;
+  std::vector<ApplyCall> applies;
+  RecordingOnScreenKeyboard keyboard(&runner, &applies);
+  HWND hwnd = DummyHwnd();
+
+  keyboard.Display(hwnd);
+  keyboard.OnClientCleared();
+  runner.AdvanceTime(OnScreenKeyboardWin::kDisplayDismissDebounce);
+  runner.SimulateTimerAwake();
+
+  EXPECT_TRUE(applies.empty());
+}
+
+TEST(OnScreenKeyboardTest, OsShowAfterUserHideDoesNotUnsuppressDisplay) {
+  MockTaskRunner runner;
+  std::vector<ApplyCall> applies;
+  RecordingOnScreenKeyboard keyboard(&runner, &applies);
+  HWND hwnd = DummyHwnd();
+
+  keyboard.HandleVisibilityEvent(false, OnScreenKeyboardWin::DipRect{}, 1.0,
+                                 POINT{0, 0}, RECT{});
+  // OS auto-invoke must not unlock TryShow. Only OnUserGesture does.
+  keyboard.HandleVisibilityEvent(true, OnScreenKeyboardWin::DipRect{}, 1.0,
+                                 POINT{0, 0}, RECT{0, 0, 100, 100});
+
+  keyboard.Display(hwnd);
+  runner.AdvanceTime(OnScreenKeyboardWin::kDisplayDismissDebounce);
+  runner.SimulateTimerAwake();
+  EXPECT_TRUE(applies.empty());
+
+  keyboard.OnUserGesture();
+  keyboard.Display(hwnd);
+  runner.AdvanceTime(OnScreenKeyboardWin::kDisplayDismissDebounce);
+  runner.SimulateTimerAwake();
+
+  ASSERT_EQ(applies.size(), 1u);
+  EXPECT_TRUE(applies[0].show);
+}
+
+TEST(OnScreenKeyboardTest, DisplaySuppressedUntilOnUserGesture) {
+  MockTaskRunner runner;
+  std::vector<ApplyCall> applies;
+  RecordingOnScreenKeyboard keyboard(&runner, &applies);
+
+  EXPECT_FALSE(keyboard.display_suppressed());
+  keyboard.HandleVisibilityEvent(false, OnScreenKeyboardWin::DipRect{}, 1.0,
+                                 POINT{0, 0}, RECT{});
+  EXPECT_TRUE(keyboard.display_suppressed());
+  keyboard.OnUserGesture();
+  EXPECT_FALSE(keyboard.display_suppressed());
+}
+
 }  // namespace testing
 }  // namespace flutter

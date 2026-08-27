@@ -23,6 +23,9 @@ class MockOnScreenKeyboard : public OnScreenKeyboard {
               (override));
   MOCK_METHOD(void, Display, (HWND hwnd), (override));
   MOCK_METHOD(void, Dismiss, (HWND hwnd), (override));
+  MOCK_METHOD(void, OnUserGesture, (), (override));
+  MOCK_METHOD(void, OnClientCleared, (), (override));
+  MOCK_METHOD(bool, display_suppressed, (), (const, override));
   MOCK_METHOD(bool, shown, (), (const, override));
   MOCK_METHOD(double, physical_bottom_inset, (), (const, override));
 
