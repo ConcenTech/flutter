@@ -89,7 +89,16 @@ class TextInputPlugin : public TsfTextStoreDelegate {
   // Records the device kind of the most recent pointer event.
   //
   // |TextInput.show| requests the on-screen keyboard only for touch or pen.
-  void SetLastPointerKind(FlutterPointerDeviceKind device_kind);
+  // Does not clear InputPane display suppression; that requires a later
+  // pointer on the active text field (not AppBar back or other controls).
+  void SetLastPointerKind(FlutterPointerDeviceKind device_kind,
+                          double x = 0.0,
+                          double y = 0.0);
+
+  // Called when the InputPane hides. Does not change TSF: SetFocus on hide
+  // re-shows the SIP (close immediately reopens). The dismiss pointer does
+  // not count as a request to show.
+  void OnOnScreenKeyboardHidden();
 
   FlutterPointerDeviceKind last_pointer_kind() const {
     return last_pointer_kind_;
@@ -154,6 +163,15 @@ class TextInputPlugin : public TsfTextStoreDelegate {
   void FocusTsfEditable();
   void FocusTsfNonEditable();
 
+  // Focuses the editable TSF document unless display is suppressed and the
+  // last pointer was not a tap on the active text field (e.g. AppBar back).
+  void FocusTsfEditableIfAllowed();
+
+  bool DisplayIsSuppressed() const;
+  void AcceptDisplayAfterGesture();
+  bool ShouldUnsuppressForPointer() const;
+  bool LastPointerHitsEditableField() const;
+
   // The MethodChannel used for communication with the Flutter engine.
   std::unique_ptr<flutter::MethodChannel<rapidjson::Document>> channel_;
 
@@ -170,6 +188,20 @@ class TextInputPlugin : public TsfTextStoreDelegate {
 
   // Device kind of the last pointer event. Mouse/unknown does not Display.
   FlutterPointerDeviceKind last_pointer_kind_ = kFlutterPointerDeviceKindMouse;
+
+  // False after a user SIP dismiss until the next pointer down. Prevents the
+  // dismiss tap and stale setClient/show from restoring an editable TSF
+  // document or calling TryShow.
+  bool pointer_since_dismiss_ = true;
+
+  // Last pointer-down location, in physical view pixels.
+  double last_pointer_x_ = 0.0;
+  double last_pointer_y_ = 0.0;
+
+  // Size of the active EditableText, in local logical pixels. Updated via
+  // TextInput.setEditableSizeAndTransform.
+  double editable_width_ = 0.0;
+  double editable_height_ = 0.0;
 
   // When true, |ClientWindowHasFocus| uses |window_has_focus_override_|
   // instead of GetFocus(). Tests set this via TextInputPluginModifier.

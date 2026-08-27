@@ -309,7 +309,7 @@ void FlutterWindowsView::OnPointerDown(double x,
                                        uint32_t rotation,
                                        uint32_t pressure) {
   if (engine_->text_input_plugin()) {
-    engine_->text_input_plugin()->SetLastPointerKind(device_kind);
+    engine_->text_input_plugin()->SetLastPointerKind(device_kind, x, y);
   }
   if (buttons != 0) {
     auto state = GetOrCreatePointerState(device_kind, device_id);

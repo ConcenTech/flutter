@@ -1018,8 +1018,11 @@ std::unique_ptr<TsfBridge> FlutterWindowsEngine::CreateTsfBridge() {
 }
 
 void FlutterWindowsEngine::OnOnScreenKeyboardVisibilityChanged(
-    bool /*shown*/,
+    bool shown,
     double /*physical_bottom_inset*/) {
+  if (!shown && text_input_plugin_) {
+    text_input_plugin_->OnOnScreenKeyboardHidden();
+  }
   std::vector<FlutterWindowsView*> views;
   {
     std::shared_lock read_lock(views_mutex_);

@@ -6,12 +6,14 @@
 
 #include <windows.h>
 
+#include <algorithm>
 #include <cstdint>
 #include <sstream>
 
 #include "flutter/fml/string_conversion.h"
 #include "flutter/shell/platform/common/json_method_codec.h"
 #include "flutter/shell/platform/common/text_editing_delta.h"
+#include "flutter/shell/platform/windows/dpi_utils.h"
 #include "flutter/shell/platform/windows/flutter_windows_engine.h"
 #include "flutter/shell/platform/windows/flutter_windows_view.h"
 #include "flutter/shell/platform/windows/on_screen_keyboard.h"
@@ -242,6 +244,9 @@ void TextInputPlugin::HandleMethodCall(
     view->OnResetImeComposing();
     active_model_ = nullptr;
     FocusTsfNonEditable();
+    if (on_screen_keyboard_) {
+      on_screen_keyboard_->OnClientCleared();
+    }
   } else if (method.compare(kSetClientMethod) == 0) {
     if (!method_call.arguments() || method_call.arguments()->IsNull()) {
       result->Error(kBadArgumentError, "Method invoked without args");
@@ -293,7 +298,7 @@ void TextInputPlugin::HandleMethodCall(
       }
     }
     active_model_ = std::make_unique<TextInputModel>();
-    FocusTsfEditable();
+    FocusTsfEditableIfAllowed();
   } else if (method.compare(kSetEditingStateMethod) == 0) {
     if (!method_call.arguments() || method_call.arguments()->IsNull()) {
       result->Error(kBadArgumentError, "Method invoked without args");
@@ -416,6 +421,14 @@ void TextInputPlugin::HandleMethodCall(
       }
       editabletext_transform_[i / 4][i % 4] = entry.GetDouble();
       ++i;
+    }
+    auto width = args.FindMember(kWidthKey);
+    auto height = args.FindMember(kHeightKey);
+    if (width != args.MemberEnd() && width->value.IsNumber()) {
+      editable_width_ = width->value.GetDouble();
+    }
+    if (height != args.MemberEnd() && height->value.IsNumber()) {
+      editable_height_ = height->value.GetDouble();
     }
     Rect transformed_rect = GetCursorRect();
     view->OnCursorRectUpdated(transformed_rect);
@@ -543,8 +556,20 @@ void TextInputPlugin::OnViewRemoved(FlutterViewId view_id) {
   view_id_ = 0;
 }
 
-void TextInputPlugin::SetLastPointerKind(FlutterPointerDeviceKind device_kind) {
+void TextInputPlugin::SetLastPointerKind(FlutterPointerDeviceKind device_kind,
+                                         double x,
+                                         double y) {
   last_pointer_kind_ = device_kind;
+  last_pointer_x_ = x;
+  last_pointer_y_ = y;
+  pointer_since_dismiss_ = true;
+}
+
+void TextInputPlugin::OnOnScreenKeyboardHidden() {
+  // Do not FocusNonEditable here. TSF SetFocus/AssociateFocus on an
+  // InputPane hide (user dismiss or our TryHide after pop) makes Windows
+  // show the SIP again, so the keyboard cannot stay closed.
+  pointer_since_dismiss_ = false;
 }
 
 HWND TextInputPlugin::GetClientWindowHandle() const {
@@ -579,6 +604,13 @@ void TextInputPlugin::MaybeDisplayOnScreenKeyboard() {
   if (!IsTouchOrPenPointer(last_pointer_kind_) || !ClientWindowHasFocus(hwnd)) {
     return;
   }
+  if (DisplayIsSuppressed()) {
+    if (!ShouldUnsuppressForPointer()) {
+      return;
+    }
+    AcceptDisplayAfterGesture();
+    FocusTsfEditable();
+  }
   on_screen_keyboard_->Display(hwnd);
 }
 
@@ -601,6 +633,67 @@ void TextInputPlugin::FocusTsfEditable() {
     return;
   }
   tsf_bridge_->FocusEditable(GetClientWindowHandle(), this);
+}
+
+void TextInputPlugin::FocusTsfEditableIfAllowed() {
+  if (DisplayIsSuppressed()) {
+    if (!ShouldUnsuppressForPointer()) {
+      return;
+    }
+    AcceptDisplayAfterGesture();
+  }
+  FocusTsfEditable();
+}
+
+bool TextInputPlugin::DisplayIsSuppressed() const {
+  return on_screen_keyboard_ != nullptr &&
+         on_screen_keyboard_->display_suppressed();
+}
+
+void TextInputPlugin::AcceptDisplayAfterGesture() {
+  if (on_screen_keyboard_ != nullptr &&
+      on_screen_keyboard_->display_suppressed()) {
+    on_screen_keyboard_->OnUserGesture();
+  }
+}
+
+bool TextInputPlugin::ShouldUnsuppressForPointer() const {
+  return pointer_since_dismiss_ && LastPointerHitsEditableField();
+}
+
+bool TextInputPlugin::LastPointerHitsEditableField() const {
+  if (editable_width_ <= 0.0 || editable_height_ <= 0.0) {
+    return false;
+  }
+  auto map = [this](double local_x, double local_y) {
+    const double x = local_x * editabletext_transform_[0][0] +
+                     local_y * editabletext_transform_[1][0] +
+                     editabletext_transform_[3][0];
+    const double y = local_x * editabletext_transform_[0][1] +
+                     local_y * editabletext_transform_[1][1] +
+                     editabletext_transform_[3][1];
+    return Point(x, y);
+  };
+  const Point top_left = map(0.0, 0.0);
+  const Point bottom_right = map(editable_width_, editable_height_);
+  const double left = std::min(top_left.x(), bottom_right.x());
+  const double right = std::max(top_left.x(), bottom_right.x());
+  const double top = std::min(top_left.y(), bottom_right.y());
+  const double bottom = std::max(top_left.y(), bottom_right.y());
+
+  double scale = 1.0;
+  HWND hwnd = GetClientWindowHandle();
+  if (hwnd != nullptr) {
+    const UINT dpi = GetDpiForHWND(hwnd);
+    if (dpi > 0) {
+      scale = static_cast<double>(dpi) / static_cast<double>(kDefaultDpi);
+    }
+  }
+  const double slop = 8.0;
+  const double x = last_pointer_x_ / scale;
+  const double y = last_pointer_y_ / scale;
+  return x >= left - slop && x <= right + slop && y >= top - slop &&
+         y <= bottom + slop;
 }
 
 void TextInputPlugin::FocusTsfNonEditable() {

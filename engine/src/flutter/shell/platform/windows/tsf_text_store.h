@@ -46,7 +46,8 @@ class TsfTextStoreDelegate {
 //
 // |GetStatus| always sets |TS_SD_INPUTPANEMANUALDISPLAYENABLE| so Windows does
 // not auto-invoke the touch keyboard. Visibility is driven by InputPane
-// TryShow / TryHide.
+// TryShow / TryHide. The Win11 dummy NONE store also sets |TS_SD_READONLY|
+// and denies |RequestLock|.
 class TsfTextStore
     : public Microsoft::WRL::RuntimeClass<
           Microsoft::WRL::RuntimeClassFlags<Microsoft::WRL::ClassicCom>,
@@ -59,6 +60,11 @@ class TsfTextStore
   HRESULT RuntimeClassInitialize(TsfTextStoreDelegate* delegate);
 
   void SetDelegate(TsfTextStoreDelegate* delegate);
+
+  // Marks this store as Chromium's Win11 dummy / empty text store (NONE).
+  // |GetStatus| then also sets |TS_SD_READONLY| and |RequestLock| fails.
+  void UseEmptyTextStore(bool enabled);
+  bool is_empty_text_store() const { return is_empty_text_store_; }
 
   // Notifies TSF that the document text or selection changed from Flutter.
   void NotifyTextChanged();
@@ -176,6 +182,7 @@ class TsfTextStore
   TextRange CurrentSelection() const;
 
   TsfTextStoreDelegate* delegate_ = nullptr;
+  bool is_empty_text_store_ = false;
   Microsoft::WRL::ComPtr<ITextStoreACPSink> sink_;
   DWORD advise_mask_ = 0;
   DWORD lock_type_ = 0;

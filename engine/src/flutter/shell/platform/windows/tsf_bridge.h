@@ -18,8 +18,12 @@ namespace flutter {
 
 // Owns the TSF thread manager and the editable / non-editable documents.
 //
-// Non-editable focus uses a document manager with no context (Chromium
-// Windows 10 TEXT_INPUT_TYPE_NONE). Editable focus uses an ITextStoreACP.
+// Non-editable focus matches Chromium TEXT_INPUT_TYPE_NONE:
+// - Windows 10: a document manager with no context.
+// - Windows 11: a dummy ITextStoreACP with KEYBOARD_DISABLED and
+//   EMPTYCONTEXT compartments, TS_SD_READONLY, and denied RequestLock.
+// Leaving an editor always SetFocuses the empty document so OS SIP
+// heuristics do not keep treating the HWND as an editor.
 class TsfBridge {
  public:
   virtual ~TsfBridge() = default;
@@ -31,9 +35,9 @@ class TsfBridge {
   // or |hwnd| is null.
   virtual void FocusEditable(HWND hwnd, TsfTextStoreDelegate* delegate) = 0;
 
-  // Associates the non-editable document with |hwnd|. No-op if TSF is
-  // unavailable. Null |hwnd| skips AssociateFocus but still drops the
-  // editable delegate.
+  // Associates the non-editable document with |hwnd| and SetFocuses it.
+  // No-op if TSF is unavailable. Null |hwnd| still SetFocuses the empty
+  // document so OS SIP heuristics stop treating the HWND as an editor.
   virtual void FocusNonEditable(HWND hwnd) = 0;
 
   // Aborts any active TSF composition.
@@ -66,18 +70,20 @@ class TsfBridgeWin : public TsfBridge {
 
  private:
   bool Initialize();
-  void CreateCaretIfNeeded(HWND hwnd);
-  void DestroyCaretIfNeeded();
+  void MaybeInitializeEmptyTextStore();
+  HRESULT InitializeDisabledContext(ITfContext* context);
 
   Microsoft::WRL::ComPtr<ITfThreadMgr> thread_mgr_;
   Microsoft::WRL::ComPtr<ITfDocumentMgr> empty_document_mgr_;
+  Microsoft::WRL::ComPtr<ITfContext> empty_context_;
+  Microsoft::WRL::ComPtr<TsfTextStore> empty_text_store_;
   Microsoft::WRL::ComPtr<ITfDocumentMgr> editable_document_mgr_;
   Microsoft::WRL::ComPtr<ITfContext> editable_context_;
   Microsoft::WRL::ComPtr<TsfTextStore> text_store_;
   TfClientId client_id_ = TF_CLIENTID_NULL;
   TfEditCookie edit_cookie_ = TF_INVALID_EDIT_COOKIE;
+  TfEditCookie empty_edit_cookie_ = TF_INVALID_EDIT_COOKIE;
   HWND associated_hwnd_ = nullptr;
-  bool caret_created_ = false;
   bool available_ = false;
 
   FML_DISALLOW_COPY_AND_ASSIGN(TsfBridgeWin);
