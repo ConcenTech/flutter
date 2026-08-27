@@ -563,12 +563,19 @@ void TextInputPlugin::SetLastPointerKind(FlutterPointerDeviceKind device_kind,
   last_pointer_x_ = x;
   last_pointer_y_ = y;
   pointer_since_dismiss_ = true;
+
+  // Chromium switches to TEXT_INPUT_TYPE_NONE when the user focuses
+  // non-editable UI. Flutter tap-outside / AppBar back / controls do not
+  // clearClient, so bind the HWND to the NONE document on a miss.
+  if (active_model_ != nullptr && editable_width_ > 0.0 &&
+      !LastPointerHitsEditableField()) {
+    FocusTsfNonEditable();
+  }
 }
 
 void TextInputPlugin::OnOnScreenKeyboardHidden() {
-  // Do not FocusNonEditable here. TSF SetFocus/AssociateFocus on an
-  // InputPane hide (user dismiss or our TryHide after pop) makes Windows
-  // show the SIP again, so the keyboard cannot stay closed.
+  // Do not FocusNonEditable here. Chromium never updates TSF from InputPane
+  // Hiding; TSF SetFocus/AssociateFocus on hide re-shows the SIP.
   pointer_since_dismiss_ = false;
 }
 

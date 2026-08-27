@@ -86,18 +86,23 @@ class TextInputPlugin : public TsfTextStoreDelegate {
   // stale references. The implicit view is excluded from this reset.
   void OnViewRemoved(FlutterViewId view_id);
 
-  // Records the device kind of the most recent pointer event.
+  // Records the device kind and location of the most recent pointer event.
   //
   // |TextInput.show| requests the on-screen keyboard only for touch or pen.
   // Does not clear InputPane display suppression; that requires a later
   // pointer on the active text field (not AppBar back or other controls).
+  //
+  // A pointer that misses the active field, with a client still attached,
+  // is Chromium TEXT_INPUT_TYPE_NONE: AssociateFocus the HWND to the empty
+  // TSF document so OS SIP heuristics stop. Flutter tap-outside does not
+  // clearClient.
   void SetLastPointerKind(FlutterPointerDeviceKind device_kind,
                           double x = 0.0,
                           double y = 0.0);
 
-  // Called when the InputPane hides. Does not change TSF: SetFocus on hide
-  // re-shows the SIP (close immediately reopens). The dismiss pointer does
-  // not count as a request to show.
+  // Called when the InputPane hides. Does not change TSF: Chromium never
+  // updates TSF from InputPane events, and SetFocus on hide re-shows the
+  // SIP. The dismiss pointer does not count as a request to show.
   void OnOnScreenKeyboardHidden();
 
   FlutterPointerDeviceKind last_pointer_kind() const {

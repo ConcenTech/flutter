@@ -420,7 +420,8 @@ void OnScreenKeyboardWin::HandleVisibilityEvent(
     hide_requested_ = false;
     if (!hide_was_requested) {
       // The user dismissed the InputPane (taskbar, tap on the SIP, etc.).
-      // Do not TryShow again until a new pointer gesture.
+      // Do not TryShow again until a new pointer gesture. Do not change
+      // TSF here: Chromium never updates TSF from InputPane Hiding.
       suppress_display_ = true;
       CancelPendingDisplay();
     }

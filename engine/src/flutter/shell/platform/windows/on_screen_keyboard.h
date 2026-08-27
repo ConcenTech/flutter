@@ -20,9 +20,12 @@ namespace flutter {
 
 // Controls the Windows on-screen (touch) keyboard via WinRT InputPane.
 //
-// Display and Dismiss request IInputPane2::TryShow / TryHide. Showing / Hiding
-// events update |shown| and the physical bottom inset used for viewInsets.
-// TSF, not this type, owns IME policy and auto-invoke suppression.
+// Chromium: ui/base/ime/win/on_screen_keyboard_display_manager_input_pane.cc
+// Display and Dismiss request IInputPane2::TryShow / TryHide with a 300 ms
+// debounce. Showing / Hiding only update |shown| and the physical bottom
+// inset used for viewInsets. They do not change TSF (Chromium never updates
+// TSF from InputPane events). TSF HWND association, not this type, owns OS
+// SIP auto-invoke suppression.
 class OnScreenKeyboard {
  public:
   using VisibilityChanged =
