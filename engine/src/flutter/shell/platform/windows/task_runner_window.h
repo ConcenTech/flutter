@@ -66,7 +66,10 @@ class TaskRunnerWindow {
 
   static std::shared_ptr<TaskRunnerWindow> GetSharedInstance();
 
-  // Triggers processing delegate tasks on main thread
+  // Triggers processing delegate tasks on main thread.
+  //
+  // Posts a private WM_APP message, not WM_NULL. TSF GetMessage hooks
+  // drop WM_NULL, which stalls vsync until a real input event arrives.
   void WakeUp();
 
   void AddDelegate(Delegate* delegate);
