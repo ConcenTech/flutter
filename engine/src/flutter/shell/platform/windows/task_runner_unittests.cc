@@ -123,6 +123,12 @@ TEST(TaskRunnerTest, TimerThreadDoesNotCancelEarlierScheduledTasks) {
 class TestTaskRunnerWindow : public TaskRunnerWindow {
  public:
   TestTaskRunnerWindow() : TaskRunnerWindow() {}
+
+  HWND hwnd() const { return window_handle_; }
+
+  void SimulateMessage(UINT message, WPARAM wparam = 0, LPARAM lparam = 0) {
+    HandleMessage(message, wparam, lparam);
+  }
 };
 
 TEST(TaskRunnerTest, EmptyTaskRunnerReturnsNanoSecondsMax) {
@@ -152,13 +158,39 @@ TEST(TaskRunnerTest, TaskRunnerWindowCoalescesWakeUpMessages) {
   window.WakeUp();
   window.WakeUp();
 
+  int posted_wakes = 0;
   ::MSG msg;
-  while (PeekMessage(&msg, nullptr, 0, 0, PM_REMOVE)) {
+  while (PeekMessage(&msg, window.hwnd(), 0, 0, PM_REMOVE)) {
+    if (msg.message == WM_APP + 1) {
+      posted_wakes++;
+    }
     TranslateMessage(&msg);
     DispatchMessage(&msg);
   }
 
-  EXPECT_EQ(delegate.process_tasks_call_count_, 1);
+  EXPECT_EQ(posted_wakes, 1);
+  EXPECT_GE(delegate.process_tasks_call_count_, 1);
+}
+
+TEST(TaskRunnerTest, TaskRunnerWindowWakesOnNull) {
+  class Delegate : public TaskRunnerWindow::Delegate {
+   public:
+    std::chrono::nanoseconds ProcessTasks() override {
+      process_tasks_call_count_++;
+      return std::chrono::nanoseconds::max();
+    }
+
+    int process_tasks_call_count_ = 0;
+  };
+
+  Delegate delegate;
+  TestTaskRunnerWindow window;
+  window.AddDelegate(&delegate);
+  const int before = delegate.process_tasks_call_count_;
+
+  window.SimulateMessage(WM_NULL);
+
+  EXPECT_EQ(delegate.process_tasks_call_count_, before + 1);
 }
 
 TEST(TaskRunnerTest, PostDelayedTaskRunsAfterDelay) {
