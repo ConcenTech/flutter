@@ -63,9 +63,9 @@ bool TsfBridgeWin::Initialize() {
     return false;
   }
 
-  // Activate installs a WH_GETMESSAGE hook on this thread. Posted WM_NULL
-  // (and posted messages rewritten to WM_NULL) never reach the task runner;
-  // TaskRunnerWindow therefore wakes with SendNotifyMessage / WM_TIMER.
+  // Activate installs TSF GetMessage hooks on this thread. Flutter must not
+  // wake the UI thread with WM_NULL while those hooks are installed (see
+  // TaskRunnerWindow wake message).
   hr = thread_mgr_->Activate(&client_id_);
   if (FAILED(hr)) {
     LogTsfFailure("ITfThreadMgr::Activate", hr);
