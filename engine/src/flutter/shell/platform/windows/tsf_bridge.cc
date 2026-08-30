@@ -63,9 +63,6 @@ bool TsfBridgeWin::Initialize() {
     return false;
   }
 
-  // Activate installs TSF GetMessage hooks on this thread. Flutter must not
-  // wake the UI thread with WM_NULL while those hooks are installed (see
-  // TaskRunnerWindow wake message).
   hr = thread_mgr_->Activate(&client_id_);
   if (FAILED(hr)) {
     LogTsfFailure("ITfThreadMgr::Activate", hr);
@@ -224,17 +221,11 @@ void TsfBridgeWin::FocusNonEditable(HWND hwnd) {
   // re-invoke the SIP.
   HWND associate_hwnd = hwnd != nullptr ? hwnd : associated_hwnd_;
   if (associate_hwnd != nullptr) {
-    if (empty_associated_ && associated_hwnd_ == associate_hwnd) {
-      associated_hwnd_ = hwnd;
-      return;
-    }
     Microsoft::WRL::ComPtr<ITfDocumentMgr> previous;
     HRESULT hr = thread_mgr_->AssociateFocus(
         associate_hwnd, empty_document_mgr_.Get(), &previous);
     if (FAILED(hr)) {
       LogTsfFailure("AssociateFocus(empty)", hr);
-    } else {
-      empty_associated_ = true;
     }
   } else {
     HRESULT hr = thread_mgr_->SetFocus(empty_document_mgr_.Get());

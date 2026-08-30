@@ -15,17 +15,6 @@
 
 namespace flutter {
 
-namespace {
-
-// Flutter's platform task runner wakes the UI thread by posting to a
-// message-only HWND. WM_NULL is a documented no-op; TSF GetMessage hooks
-// (installed by ITfThreadMgr::Activate) commonly drop it. Vsync and Dart
-// tasks then run only when a real input message arrives — mouse hover or
-// pen-in-range — which matches "UI frozen after a finger tap".
-constexpr UINT kWakeMessage = WM_APP + 1;
-
-}  // namespace
-
 TimerThread::TimerThread(std::function<void()> callback)
     : callback_(std::move(callback)),
       next_fire_time_(
@@ -154,7 +143,7 @@ void TaskRunnerWindow::WakeUp() {
   // get flooded possibly resulting in application stopping to respond.
   // https://github.com/flutter/flutter/issues/173843
   if (wake_up_posted_.compare_exchange_strong(expected, true)) {
-    if (!PostMessage(window_handle_, kWakeMessage, 0, 0)) {
+    if (!PostMessage(window_handle_, WM_NULL, 0, 0)) {
       FML_LOG(ERROR) << "Failed to post message to main thread.";
     }
   }
@@ -226,7 +215,7 @@ TaskRunnerWindow::HandleMessage(UINT const message,
                                 WPARAM const wparam,
                                 LPARAM const lparam) noexcept {
   switch (message) {
-    case kWakeMessage:
+    case WM_NULL:
       // After this point, WakeUp() needs to post new message to ensure
       // that the wake-up request is not lost.
       wake_up_posted_ = false;
