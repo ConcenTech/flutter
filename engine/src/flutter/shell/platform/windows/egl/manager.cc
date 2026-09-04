@@ -204,24 +204,14 @@ bool Manager::InitializeConfig() {
 }
 
 bool Manager::InitializeContexts() {
-  const EGLint gles3_context_attributes[] = {EGL_CONTEXT_CLIENT_VERSION, 3,
-                                             EGL_NONE};
-  const EGLint gles2_context_attributes[] = {EGL_CONTEXT_CLIENT_VERSION, 2,
-                                             EGL_NONE};
+  // Force OpenGL ES 2.0 for A/B diagnosis of a Windows 11 tablet freeze where
+  // frames / UI only advance on hover or WM_MOUSEMOVE (not reproducible on
+  // 3.47.2). Master prefers GLES 3 via #191516 (ea81d1197d4); restore the
+  // 3.47.2 GLES2-only path to test whether that change stalls vsync/present.
+  const EGLint context_attributes[] = {EGL_CONTEXT_CLIENT_VERSION, 2, EGL_NONE};
 
-  // Attempt to create an OpenGL ES 3.0 context first (which enables UBOs and
-  // other modern GLES3 features on ANGLE), falling back to OpenGL ES 2.0.
-  const EGLint* context_attributes = gles3_context_attributes;
-  EGLContext render_context =
+  auto const render_context =
       ::eglCreateContext(display_, config_, EGL_NO_CONTEXT, context_attributes);
-  if (render_context == EGL_NO_CONTEXT) {
-    // Clear out lingering error.
-    ::eglGetError();
-    context_attributes = gles2_context_attributes;
-    render_context = ::eglCreateContext(display_, config_, EGL_NO_CONTEXT,
-                                        context_attributes);
-  }
-
   if (render_context == EGL_NO_CONTEXT) {
     LogEGLError("Failed to create EGL render context");
     return false;
