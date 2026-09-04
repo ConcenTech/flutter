@@ -733,7 +733,6 @@ FlutterWindow::HandleMessage(UINT const message,
     }
     case WM_SETFOCUS:
       OnWindowStateEvent(WindowStateEvent::kFocus);
-      ::CreateCaret(window_handle_, nullptr, 1, 1);
       break;
     case WM_KILLFOCUS:
       OnWindowStateEvent(WindowStateEvent::kUnfocus);
@@ -836,19 +835,27 @@ FlutterWindow::HandleMessage(UINT const message,
       // language-specific issues.
       break;
     case WM_IME_SETCONTEXT:
-      OnImeSetContext(message, wparam, lparam);
+      if (!IsTsfImeActive()) {
+        OnImeSetContext(message, wparam, lparam);
+      }
       // Strip the ISC_SHOWUICOMPOSITIONWINDOW bit from lparam before passing
       // it to DefWindowProc() so that the composition window is hidden since
       // Flutter renders the composing string itself.
       result_lparam &= ~ISC_SHOWUICOMPOSITIONWINDOW;
       break;
     case WM_IME_STARTCOMPOSITION:
+      if (IsTsfImeActive()) {
+        return TRUE;
+      }
       OnImeStartComposition(message, wparam, lparam);
       // Suppress further processing by DefWindowProc() so that the default
       // system IME style isn't used, but rather the one set in the
       // WM_IME_SETCONTEXT handler.
       return TRUE;
     case WM_IME_COMPOSITION:
+      if (IsTsfImeActive()) {
+        return TRUE;
+      }
       OnImeComposition(message, wparam, lparam);
       if (lparam & GCS_RESULTSTR || lparam & GCS_COMPSTR) {
         // Suppress further processing by DefWindowProc() since otherwise it
@@ -860,6 +867,9 @@ FlutterWindow::HandleMessage(UINT const message,
       }
       break;
     case WM_IME_ENDCOMPOSITION:
+      if (IsTsfImeActive()) {
+        return TRUE;
+      }
       OnImeEndComposition(message, wparam, lparam);
       return TRUE;
     case WM_IME_REQUEST:
@@ -1018,6 +1028,11 @@ void FlutterWindow::OnImeRequest(UINT const message,
   // TODO(cbracken): Handle IMR_RECONVERTSTRING, IMR_DOCUMENTFEED,
   // and IMR_QUERYCHARPOSITION messages.
   // https://github.com/flutter/flutter/issues/74547
+}
+
+bool FlutterWindow::IsTsfImeActive() const {
+  return binding_handler_delegate_ &&
+         binding_handler_delegate_->IsTsfImeActive();
 }
 
 void FlutterWindow::AbortImeComposing() {
