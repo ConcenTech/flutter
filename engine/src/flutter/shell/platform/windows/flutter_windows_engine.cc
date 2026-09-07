@@ -194,7 +194,12 @@ FlutterWindowsEngine::FlutterWindowsEngine(
 
   // Check for impeller support.
   auto& switches = project_->GetSwitches();
-  bool enable_impeller = true;
+  // A/B: force Skia for Windows 11 tablet freeze-until-hover diagnosis.
+  // FLUTTER_ENGINE_SWITCHES is compiled out under FLUTTER_RELEASE
+  // (engine_switches.cc), so `flutter run --release --no-enable-impeller`
+  // against host_release is a no-op. Default off here so release builds
+  // actually use Skia unless explicitly re-enabled via project API.
+  bool enable_impeller = false;
   if (project_->impeller_switch() == FlutterImpellerSwitch::Enabled) {
     enable_impeller = true;
   } else if (project_->impeller_switch() == FlutterImpellerSwitch::Disabled) {
@@ -318,11 +323,11 @@ bool FlutterWindowsEngine::Run(std::string_view entrypoint) {
       // engine.
       switches.push_back("--enable-impeller");
     }
-  } else if (project_->impeller_switch() == FlutterImpellerSwitch::Disabled) {
+  } else {
     if (std::find(switches.begin(), switches.end(),
                   "--enable-impeller=false") == switches.end()) {
-      // Impeller was disabled programmatically, so forward the switch to the
-      // engine.
+      // Impeller was disabled (including the release A/B default above), so
+      // forward the switch to the engine shell settings.
       switches.push_back("--enable-impeller=false");
     }
   }
