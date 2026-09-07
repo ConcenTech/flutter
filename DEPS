@@ -543,8 +543,11 @@ deps = {
   'engine/src/flutter/third_party/swiftshader':
   Var('flutter_git') + '/third_party/swiftshader.git' + '@' + '1be9f83618f8ba258431c0c13d7a083eb193df11',
 
+  # A/B: pin ANGLE to the 3.47.2 revision (pre #189595 / b51e3c76812) to
+  # diagnose Windows 11 tablet freeze-until-hover. GLES3 force (#191516) did
+  # not fix it; next shared suspect is this ANGLE roll.
   'engine/src/flutter/third_party/angle':
-  Var('flutter_git') + '/third_party/angle' + '@' + 'cc08479fbcc181697fa837069ce1103c58c15528',
+  Var('flutter_git') + '/third_party/angle' + '@' + '84027aca9b71c9ba335bd000dad1107b8810a511',
 
   'engine/src/flutter/third_party/vulkan_memory_allocator':
   Var('chromium_git') + '/external/github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator' + '@' + 'c788c52156f3ef7bc7ab769cb03c110a53ac8fcb',
