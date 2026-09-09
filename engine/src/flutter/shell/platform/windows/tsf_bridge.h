@@ -64,8 +64,8 @@ class TsfBridge {
   virtual void FocusEditable(HWND hwnd, TsfTextStoreDelegate* delegate) = 0;
 
   // Chromium NONE: AssociateFocus |hwnd| to the empty document. Does not also
-  // call SetFocus. No-op if TSF is unavailable. Null |hwnd| uses the last
-  // associated HWND, or SetFocus(empty) if there is none.
+  // call SetFocus. No-op if TSF is unavailable. Null |hwnd| reuses the last
+  // HWND (and does not forget it), or SetFocus(empty) if there is none.
   virtual void FocusNonEditable(HWND hwnd) = 0;
 
   // Aborts any active TSF composition.

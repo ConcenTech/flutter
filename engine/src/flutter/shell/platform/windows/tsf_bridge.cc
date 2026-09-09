@@ -33,6 +33,13 @@ TsfBridgeWin::TsfBridgeWin() {
 }
 
 TsfBridgeWin::~TsfBridgeWin() {
+  // AssociateFocus does not AddRef the document manager. Drop the HWND
+  // association before releasing our documents (Chromium ClearAssociateFocus).
+  if (thread_mgr_ && associated_hwnd_ != nullptr) {
+    Microsoft::WRL::ComPtr<ITfDocumentMgr> previous;
+    thread_mgr_->AssociateFocus(associated_hwnd_, nullptr, &previous);
+    associated_hwnd_ = nullptr;
+  }
   if (empty_context_ && empty_document_mgr_) {
     empty_document_mgr_->Pop(TF_POPF_ALL);
   }
@@ -145,6 +152,7 @@ void TsfBridgeWin::MaybeInitializeEmptyTextStore() {
     LogTsfFailure("CreateContext(empty)", hr);
     empty_context_.Reset();
     empty_text_store_.Reset();
+    empty_edit_cookie_ = TF_INVALID_EDIT_COOKIE;
     return;
   }
 
@@ -153,12 +161,19 @@ void TsfBridgeWin::MaybeInitializeEmptyTextStore() {
     LogTsfFailure("Push(empty)", hr);
     empty_context_.Reset();
     empty_text_store_.Reset();
+    empty_edit_cookie_ = TF_INVALID_EDIT_COOKIE;
     return;
   }
 
   hr = InitializeDisabledContext(empty_context_.Get());
   if (FAILED(hr)) {
     LogTsfFailure("InitializeDisabledContext", hr);
+    // Win11 dummy store without EMPTYCONTEXT is not NONE. Fall back to the
+    // Win10 document manager with no context.
+    empty_document_mgr_->Pop(TF_POPF_ALL);
+    empty_context_.Reset();
+    empty_text_store_.Reset();
+    empty_edit_cookie_ = TF_INVALID_EDIT_COOKIE;
   }
 }
 
@@ -175,7 +190,9 @@ HRESULT TsfBridgeWin::InitializeDisabledContext(ITfContext* context) {
   if (FAILED(hr) || !disabled) {
     return FAILED(hr) ? hr : E_FAIL;
   }
-  VARIANT disabled_value{.vt = VT_I4, .lVal = 1};
+  VARIANT disabled_value = {};
+  disabled_value.vt = VT_I4;
+  disabled_value.lVal = 1;
   hr = disabled->SetValue(client_id_, &disabled_value);
   if (FAILED(hr)) {
     return hr;
@@ -187,7 +204,9 @@ HRESULT TsfBridgeWin::InitializeDisabledContext(ITfContext* context) {
   if (FAILED(hr) || !empty_context) {
     return FAILED(hr) ? hr : E_FAIL;
   }
-  VARIANT empty_value{.vt = VT_I4, .lVal = 1};
+  VARIANT empty_value = {};
+  empty_value.vt = VT_I4;
+  empty_value.lVal = 1;
   return empty_context->SetValue(client_id_, &empty_value);
 }
 
@@ -197,6 +216,13 @@ void TsfBridgeWin::FocusEditable(HWND hwnd, TsfTextStoreDelegate* delegate) {
   }
   if (text_store_) {
     text_store_->SetDelegate(delegate);
+    text_store_->SetWindowHandle(hwnd);
+  }
+  // Chromium SetFocusedClient writes the HWND onto every store, including
+  // NONE, so GetWnd on the dummy store stays valid while the HWND remains
+  // associated with the empty document from a previous NONE.
+  if (empty_text_store_) {
+    empty_text_store_->SetWindowHandle(hwnd);
   }
   // Chromium non-NONE: SetFocus only. AssociateFocus of the editable
   // document onto the HWND is what makes Windows SIP heuristics treat
@@ -212,14 +238,21 @@ void TsfBridgeWin::FocusNonEditable(HWND hwnd) {
   if (!available_) {
     return;
   }
-  if (text_store_) {
-    text_store_->SetDelegate(nullptr);
-  }
-
   // Chromium TEXT_INPUT_TYPE_NONE: AssociateFocus only. It SetFocuses
   // internally. Calling SetFocus as well notifies TSF twice and can
   // re-invoke the SIP.
   HWND associate_hwnd = hwnd != nullptr ? hwnd : associated_hwnd_;
+  if (text_store_) {
+    text_store_->SetDelegate(nullptr);
+    text_store_->SetWindowHandle(associate_hwnd);
+  }
+  if (empty_text_store_) {
+    empty_text_store_->SetWindowHandle(associate_hwnd);
+  }
+  if (associated_hwnd_ != nullptr && associate_hwnd != associated_hwnd_) {
+    Microsoft::WRL::ComPtr<ITfDocumentMgr> previous;
+    thread_mgr_->AssociateFocus(associated_hwnd_, nullptr, &previous);
+  }
   if (associate_hwnd != nullptr) {
     Microsoft::WRL::ComPtr<ITfDocumentMgr> previous;
     HRESULT hr = thread_mgr_->AssociateFocus(
@@ -233,7 +266,10 @@ void TsfBridgeWin::FocusNonEditable(HWND hwnd) {
       LogTsfFailure("SetFocus(empty)", hr);
     }
   }
-  associated_hwnd_ = hwnd;
+  // A null |hwnd| means "reuse the last HWND". Do not forget it.
+  if (hwnd != nullptr) {
+    associated_hwnd_ = hwnd;
+  }
 }
 
 void TsfBridgeWin::AbortComposition() {

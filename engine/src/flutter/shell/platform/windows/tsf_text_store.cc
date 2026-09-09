@@ -26,6 +26,10 @@ void TsfTextStore::SetDelegate(TsfTextStoreDelegate* delegate) {
   cache_valid_ = false;
 }
 
+void TsfTextStore::SetWindowHandle(HWND hwnd) {
+  window_handle_ = hwnd;
+}
+
 void TsfTextStore::UseEmptyTextStore(bool enabled) {
   is_empty_text_store_ = enabled;
 }
@@ -574,7 +578,11 @@ STDMETHODIMP TsfTextStore::GetWnd(TsViewCookie vcView, HWND* phwnd) {
   if (vcView != kViewCookie) {
     return E_INVALIDARG;
   }
-  *phwnd = delegate_ ? delegate_->GetTsfWindowHandle() : nullptr;
+  if (window_handle_ != nullptr) {
+    *phwnd = window_handle_;
+  } else {
+    *phwnd = delegate_ ? delegate_->GetTsfWindowHandle() : nullptr;
+  }
   return S_OK;
 }
 

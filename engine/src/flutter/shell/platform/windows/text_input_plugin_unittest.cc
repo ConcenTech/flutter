@@ -1289,5 +1289,36 @@ TEST_F(TextInputPluginTest, SetClientWhileSuppressedWithoutPointerSkipsTsf) {
   SimulateSetClient(messenger);
 }
 
+TEST_F(TextInputPluginTest,
+       UserDismissThenClearClientThenSetClientDoesNotFocusEditable) {
+  UseEngineWithView(DummyHwnd());
+
+  TestBinaryMessenger messenger([](const std::string& channel,
+                                   const uint8_t* message, size_t message_size,
+                                   BinaryReply reply) {});
+  NiceMock<MockOnScreenKeyboard> keyboard;
+  NiceMock<MockTsfBridge> tsf;
+  TextInputPlugin handler(&messenger, engine(), &keyboard, &tsf);
+
+  EXPECT_CALL(tsf, FocusEditable(DummyHwnd(), &handler)).Times(1);
+  SimulateSetClient(messenger);
+
+  handler.OnOnScreenKeyboardHidden();
+  ON_CALL(keyboard, display_suppressed()).WillByDefault(Return(true));
+
+  EXPECT_CALL(*view(), OnResetImeComposing());
+  EXPECT_CALL(keyboard, Dismiss(_)).Times(0);
+  EXPECT_CALL(keyboard, OnClientCleared()).Times(1);
+  EXPECT_CALL(tsf, AbortComposition()).Times(1);
+  EXPECT_CALL(tsf, FocusNonEditable(DummyHwnd())).Times(1);
+  SimulateTextInputMethod(messenger, kClearClientMethod);
+
+  EXPECT_CALL(tsf, FocusEditable(_, _)).Times(0);
+  EXPECT_CALL(keyboard, Display(_)).Times(0);
+  EXPECT_CALL(keyboard, OnUserGesture()).Times(0);
+  SimulateSetClient(messenger);
+  SimulateTextInputMethod(messenger, kShowMethod);
+}
+
 }  // namespace testing
 }  // namespace flutter

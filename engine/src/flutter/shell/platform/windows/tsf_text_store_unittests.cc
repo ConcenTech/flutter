@@ -121,5 +121,20 @@ TEST(TsfTextStoreTest, GetWndWithoutDelegateIsNull) {
   EXPECT_EQ(hwnd, nullptr);
 }
 
+TEST(TsfTextStoreTest, EmptyStoreGetWndReturnsWindowHandle) {
+  Microsoft::WRL::ComPtr<TsfTextStore> store;
+  HRESULT hr = Microsoft::WRL::MakeAndInitialize<TsfTextStore>(&store, nullptr);
+  ASSERT_EQ(hr, S_OK);
+  store->UseEmptyTextStore(true);
+  HWND expected = reinterpret_cast<HWND>(0x1234);
+  store->SetWindowHandle(expected);
+
+  HWND hwnd = nullptr;
+  TsViewCookie view = 0;
+  EXPECT_EQ(store->GetActiveView(&view), S_OK);
+  EXPECT_EQ(store->GetWnd(view, &hwnd), S_OK);
+  EXPECT_EQ(hwnd, expected);
+}
+
 }  // namespace testing
 }  // namespace flutter

@@ -61,6 +61,10 @@ class TsfTextStore
 
   void SetDelegate(TsfTextStoreDelegate* delegate);
 
+  // HWND reported by |GetWnd|. Chromium sets this on every store, including
+  // the Win11 dummy NONE store, via SetFocusedTextInputClient.
+  void SetWindowHandle(HWND hwnd);
+
   // Marks this store as Chromium's Win11 dummy / empty text store (NONE).
   // |GetStatus| then also sets |TS_SD_READONLY| and |RequestLock| fails.
   void UseEmptyTextStore(bool enabled);
@@ -182,6 +186,7 @@ class TsfTextStore
   TextRange CurrentSelection() const;
 
   TsfTextStoreDelegate* delegate_ = nullptr;
+  HWND window_handle_ = nullptr;
   bool is_empty_text_store_ = false;
   Microsoft::WRL::ComPtr<ITextStoreACPSink> sink_;
   DWORD advise_mask_ = 0;
