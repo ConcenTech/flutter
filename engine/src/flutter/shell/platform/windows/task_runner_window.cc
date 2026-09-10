@@ -17,15 +17,12 @@ namespace flutter {
 
 namespace {
 
-// Flutter's platform task runner wakes the UI thread through a message-only
-// HWND. ITfThreadMgr::Activate installs a WH_GETMESSAGE hook that commonly
-// drops posted WM_NULL, or rewrites other posted messages to WM_NULL, so
-// vsync/Dart only run while a hover stream (mouse move / pen-in-range) keeps
-// GetMessage busy. Sent messages are dispatched inside GetMessage and do not
-// go through that hook. WM_TIMER is synthesized by GetMessage as a fallback
-// for same-thread posts.
+// Flutter's platform task runner wakes the UI thread by posting to a
+// message-only HWND. WM_NULL is a documented no-op; TSF GetMessage hooks
+// (installed by ITfThreadMgr::Activate) commonly drop it. Vsync and Dart
+// tasks then run only when a real input message arrives — mouse hover or
+// pen-in-range — which matches "UI frozen after a finger tap".
 constexpr UINT kWakeMessage = WM_APP + 1;
-constexpr uintptr_t kWakeTimerId = 2;
 
 }  // namespace
 
@@ -124,7 +121,6 @@ TaskRunnerWindow::~TaskRunnerWindow() {
   timer_thread_.Stop();
 
   if (window_handle_) {
-    ::KillTimer(window_handle_, kWakeTimerId);
     DestroyWindow(window_handle_);
     window_handle_ = nullptr;
   }
@@ -153,43 +149,15 @@ std::shared_ptr<TaskRunnerWindow> TaskRunnerWindow::GetSharedInstance() {
 }
 
 void TaskRunnerWindow::WakeUp() {
-  if (!window_handle_) {
-    return;
-  }
-
-  // The vsync timer thread is not the UI thread. SendNotifyMessage queues a
-  // *sent* message, which GetMessage dispatches to this WndProc without
-  // returning it through TSF's WH_GETMESSAGE hook. PostMessage is what that
-  // hook drops or converts to WM_NULL, which is why finger taps froze until
-  // mouse/pen hover delivered another input message.
-  if (GetCurrentThreadId() != thread_id_) {
-    if (!SendNotifyMessage(window_handle_, kWakeMessage, 0, 0)) {
-      FML_LOG(ERROR) << "Failed to notify main thread.";
-    }
-    return;
-  }
-
   bool expected = false;
-  // Only post a queued wake if needed otherwise the message queue will
+  // Only post wake up message if needed otherwise the message queue will
   // get flooded possibly resulting in application stopping to respond.
   // https://github.com/flutter/flutter/issues/173843
   if (wake_up_posted_.compare_exchange_strong(expected, true)) {
     if (!PostMessage(window_handle_, kWakeMessage, 0, 0)) {
       FML_LOG(ERROR) << "Failed to post message to main thread.";
-      wake_up_posted_ = false;
     }
   }
-  // SetTimer from the UI thread still wakes GetMessage if the posted
-  // message is rewritten to WM_NULL and ignored by DefWindowProc.
-  ::SetTimer(window_handle_, kWakeTimerId, USER_TIMER_MINIMUM, nullptr);
-}
-
-void TaskRunnerWindow::OnWake() {
-  if (window_handle_) {
-    ::KillTimer(window_handle_, kWakeTimerId);
-  }
-  wake_up_posted_ = false;
-  ProcessTasks();
 }
 
 void TaskRunnerWindow::AddDelegate(Delegate* delegate) {
@@ -259,18 +227,11 @@ TaskRunnerWindow::HandleMessage(UINT const message,
                                 LPARAM const lparam) noexcept {
   switch (message) {
     case kWakeMessage:
-    case WM_NULL:
-      // After this point, WakeUp() needs to post a new message to ensure
-      // that the wake-up request is not lost. WM_NULL is included because
-      // TSF GetMessage hooks rewrite posted wakes to WM_NULL.
-      OnWake();
+      // After this point, WakeUp() needs to post new message to ensure
+      // that the wake-up request is not lost.
+      wake_up_posted_ = false;
+      ProcessTasks();
       return 0;
-    case WM_TIMER:
-      if (wparam == kWakeTimerId) {
-        OnWake();
-        return 0;
-      }
-      break;
   }
   return DefWindowProcW(window_handle_, message, wparam, lparam);
 }
