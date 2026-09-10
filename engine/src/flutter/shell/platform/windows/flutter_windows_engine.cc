@@ -1020,7 +1020,10 @@ std::unique_ptr<TsfBridge> FlutterWindowsEngine::CreateTsfBridge() {
 void FlutterWindowsEngine::OnOnScreenKeyboardVisibilityChanged(
     bool shown,
     double /*physical_bottom_inset*/) {
-  if (!shown && text_input_plugin_) {
+  // Only a user dismiss sets suppress_display_. Our Dismiss/TryHide must
+  // not clear the pointer latch or the same tap's TextInput.show is ignored.
+  if (!shown && text_input_plugin_ && on_screen_keyboard_ &&
+      on_screen_keyboard_->display_suppressed()) {
     text_input_plugin_->OnOnScreenKeyboardHidden();
   }
   std::vector<FlutterWindowsView*> views;

@@ -556,6 +556,12 @@ void TextInputPlugin::OnViewRemoved(FlutterViewId view_id) {
   view_id_ = 0;
 }
 
+static bool IsTouchOrPenPointer(FlutterPointerDeviceKind kind) {
+  return kind == kFlutterPointerDeviceKindTouch ||
+         kind == kFlutterPointerDeviceKindStylus ||
+         kind == kFlutterPointerDeviceKindInvertedStylus;
+}
+
 void TextInputPlugin::SetLastPointerKind(FlutterPointerDeviceKind device_kind,
                                          double x,
                                          double y) {
@@ -564,19 +570,34 @@ void TextInputPlugin::SetLastPointerKind(FlutterPointerDeviceKind device_kind,
   last_pointer_y_ = y;
   pointer_since_dismiss_ = true;
 
-  // Chromium switches to TEXT_INPUT_TYPE_NONE when the user focuses
-  // non-editable UI. Flutter tap-outside / AppBar back / controls do not
-  // clearClient, so bind the HWND to the NONE document on a miss.
-  if (active_model_ != nullptr && editable_width_ > 0.0 &&
-      !LastPointerHitsEditableField()) {
+  // Chromium TEXT_INPUT_TYPE_NONE: tap-outside / no client. TSF HWND
+  // association plus InputPane TryHide (TS_SD_INPUTPANEMANUALDISPLAYENABLE
+  // means AssociateFocus alone does not hide the pane). Field-to-field
+  // Dismiss then Display coalesces to show via the 300 ms debounce.
+  if (ShouldTreatPointerAsNonEditable()) {
     FocusTsfNonEditable();
+    DismissOnScreenKeyboard();
+    return;
+  }
+
+  // A hit on the field is enough to show. After a user SIP dismiss the
+  // connection often stays attached, so the framework may not send
+  // TextInput.show again.
+  if (LastPointerHitsEditableField() && IsTouchOrPenPointer(device_kind)) {
+    AcceptDisplayAfterGesture();
+    FocusTsfEditable();
+    MaybeDisplayOnScreenKeyboard();
   }
 }
 
 void TextInputPlugin::OnOnScreenKeyboardHidden() {
   // Do not FocusNonEditable here. Chromium never updates TSF from InputPane
   // Hiding; TSF SetFocus/AssociateFocus on hide re-shows the SIP.
-  pointer_since_dismiss_ = false;
+  // Only a user dismiss (not our Dismiss/TryHide) must drop the pointer
+  // latch; otherwise the same tap's later setClient/show is ignored.
+  if (DisplayIsSuppressed()) {
+    pointer_since_dismiss_ = false;
+  }
 }
 
 HWND TextInputPlugin::GetClientWindowHandle() const {
@@ -595,12 +616,6 @@ bool TextInputPlugin::ClientWindowHasFocus(HWND hwnd) const {
     return window_has_focus_override_;
   }
   return GetFocus() == hwnd;
-}
-
-static bool IsTouchOrPenPointer(FlutterPointerDeviceKind kind) {
-  return kind == kFlutterPointerDeviceKindTouch ||
-         kind == kFlutterPointerDeviceKindStylus ||
-         kind == kFlutterPointerDeviceKindInvertedStylus;
 }
 
 void TextInputPlugin::MaybeDisplayOnScreenKeyboard() {
@@ -666,6 +681,14 @@ void TextInputPlugin::AcceptDisplayAfterGesture() {
 
 bool TextInputPlugin::ShouldUnsuppressForPointer() const {
   return pointer_since_dismiss_ && LastPointerHitsEditableField();
+}
+
+bool TextInputPlugin::ShouldTreatPointerAsNonEditable() const {
+  if (active_model_ == nullptr) {
+    return true;
+  }
+  return editable_width_ > 0.0 && editable_height_ > 0.0 &&
+         !LastPointerHitsEditableField();
 }
 
 bool TextInputPlugin::LastPointerHitsEditableField() const {

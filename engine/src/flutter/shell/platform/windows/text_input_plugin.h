@@ -92,17 +92,23 @@ class TextInputPlugin : public TsfTextStoreDelegate {
   // Does not clear InputPane display suppression; that requires a later
   // pointer on the active text field (not AppBar back or other controls).
   //
-  // A pointer that misses the active field, with a client still attached,
-  // is Chromium TEXT_INPUT_TYPE_NONE: AssociateFocus the HWND to the empty
-  // TSF document so OS SIP heuristics stop. Flutter tap-outside does not
-  // clearClient.
+  // A pointer that misses the active field, or a pointer with no client
+  // (route pop, then UI tap), is Chromium TEXT_INPUT_TYPE_NONE:
+  // AssociateFocus the HWND to the empty TSF document and TryHide.
+  // Flutter tap-outside does not clearClient, and MANUALDISPLAYENABLE
+  // means AssociateFocus alone does not hide the InputPane.
+  //
+  // A touch/pen pointer that hits the field unsuppresses and Displays
+  // immediately so a still-focused field after a user SIP dismiss does
+  // not wait for a second TextInput.show.
   void SetLastPointerKind(FlutterPointerDeviceKind device_kind,
                           double x = 0.0,
                           double y = 0.0);
 
-  // Called when the InputPane hides. Does not change TSF: Chromium never
-  // updates TSF from InputPane events, and SetFocus on hide re-shows the
-  // SIP. The dismiss pointer does not count as a request to show.
+  // Called when the InputPane hides from a *user* dismiss (suppressed).
+  // Does not change TSF: Chromium never updates TSF from InputPane events,
+  // and SetFocus on hide re-shows the SIP. Requested TryHide must not
+  // drop the pointer latch or the same tap's show is ignored.
   void OnOnScreenKeyboardHidden();
 
   FlutterPointerDeviceKind last_pointer_kind() const {
@@ -175,6 +181,7 @@ class TextInputPlugin : public TsfTextStoreDelegate {
   bool DisplayIsSuppressed() const;
   void AcceptDisplayAfterGesture();
   bool ShouldUnsuppressForPointer() const;
+  bool ShouldTreatPointerAsNonEditable() const;
   bool LastPointerHitsEditableField() const;
 
   // The MethodChannel used for communication with the Flutter engine.

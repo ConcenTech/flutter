@@ -52,8 +52,8 @@ class OnScreenKeyboard {
   // Clears display suppression after a user pointer event.
   //
   // A user dismiss of the InputPane (Hiding without a matching Dismiss)
-  // suppresses Display until a later pointer-driven editing session
-  // (setClient / show after a new pointer, not the dismiss tap).
+  // suppresses Display until a later pointer on the text field. A field
+  // hit unsuppresses immediately; AppBar back / other controls do not.
   virtual void OnUserGesture() = 0;
 
   // Cancels a pending Display. Does not Dismiss.

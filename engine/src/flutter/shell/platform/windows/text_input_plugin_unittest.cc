@@ -52,6 +52,7 @@ namespace testing {
 namespace {
 using ::testing::_;
 using ::testing::AnyNumber;
+using ::testing::AtLeast;
 using ::testing::NiceMock;
 using ::testing::Return;
 
@@ -1164,8 +1165,8 @@ TEST_F(TextInputPluginTest,
   handler.SetLastPointerKind(kFlutterPointerDeviceKindTouch);
   SimulateSetClient(messenger);
 
-  handler.OnOnScreenKeyboardHidden();
   ON_CALL(keyboard, display_suppressed()).WillByDefault(Return(true));
+  handler.OnOnScreenKeyboardHidden();
 
   EXPECT_CALL(keyboard, Display(_)).Times(0);
   EXPECT_CALL(keyboard, OnUserGesture()).Times(0);
@@ -1190,11 +1191,12 @@ TEST_F(TextInputPluginTest,
   EXPECT_CALL(*view(), OnCursorRectUpdated(_)).Times(AnyNumber());
   SimulateEditableSizeAndTransform(messenger, 200.0, 48.0, 16.0, 80.0);
 
-  handler.OnOnScreenKeyboardHidden();
   ON_CALL(keyboard, display_suppressed()).WillByDefault(Return(true));
+  handler.OnOnScreenKeyboardHidden();
   // AppBar back / control tap is Chromium TEXT_INPUT_TYPE_NONE.
   EXPECT_CALL(tsf, AbortComposition()).Times(1);
   EXPECT_CALL(tsf, FocusNonEditable(DummyHwnd())).Times(1);
+  EXPECT_CALL(keyboard, Dismiss(DummyHwnd())).Times(1);
   handler.SetLastPointerKind(kFlutterPointerDeviceKindTouch, 12.0, 12.0);
 
   EXPECT_CALL(keyboard, Display(_)).Times(0);
@@ -1219,14 +1221,13 @@ TEST_F(TextInputPluginTest, ShowWhileSuppressedAfterPointerInFieldDisplays) {
   EXPECT_CALL(*view(), OnCursorRectUpdated(_)).Times(AnyNumber());
   SimulateEditableSizeAndTransform(messenger, 200.0, 48.0, 16.0, 80.0);
 
-  handler.OnOnScreenKeyboardHidden();
   ON_CALL(keyboard, display_suppressed()).WillByDefault(Return(true));
+  handler.OnOnScreenKeyboardHidden();
   EXPECT_CALL(tsf, FocusNonEditable(_)).Times(0);
+  EXPECT_CALL(keyboard, OnUserGesture()).Times(AtLeast(1));
+  EXPECT_CALL(tsf, FocusEditable(DummyHwnd(), &handler)).Times(AtLeast(1));
+  EXPECT_CALL(keyboard, Display(DummyHwnd())).Times(AtLeast(1));
   handler.SetLastPointerKind(kFlutterPointerDeviceKindTouch, 40.0, 100.0);
-
-  EXPECT_CALL(keyboard, OnUserGesture()).Times(1);
-  EXPECT_CALL(tsf, FocusEditable(DummyHwnd(), &handler)).Times(1);
-  EXPECT_CALL(keyboard, Display(DummyHwnd())).Times(1);
 
   SimulateTextInputMethod(messenger, kShowMethod);
 }
@@ -1280,8 +1281,8 @@ TEST_F(TextInputPluginTest, SetClientWhileSuppressedWithoutPointerSkipsTsf) {
   EXPECT_CALL(tsf, FocusEditable(DummyHwnd(), &handler)).Times(1);
   SimulateSetClient(messenger);
 
-  handler.OnOnScreenKeyboardHidden();
   ON_CALL(keyboard, display_suppressed()).WillByDefault(Return(true));
+  handler.OnOnScreenKeyboardHidden();
 
   EXPECT_CALL(tsf, FocusEditable(_, _)).Times(0);
   EXPECT_CALL(keyboard, OnUserGesture()).Times(0);
@@ -1303,8 +1304,8 @@ TEST_F(TextInputPluginTest,
   EXPECT_CALL(tsf, FocusEditable(DummyHwnd(), &handler)).Times(1);
   SimulateSetClient(messenger);
 
-  handler.OnOnScreenKeyboardHidden();
   ON_CALL(keyboard, display_suppressed()).WillByDefault(Return(true));
+  handler.OnOnScreenKeyboardHidden();
 
   EXPECT_CALL(*view(), OnResetImeComposing());
   EXPECT_CALL(keyboard, Dismiss(_)).Times(0);
@@ -1318,6 +1319,70 @@ TEST_F(TextInputPluginTest,
   EXPECT_CALL(keyboard, OnUserGesture()).Times(0);
   SimulateSetClient(messenger);
   SimulateTextInputMethod(messenger, kShowMethod);
+}
+
+TEST_F(TextInputPluginTest, PointerOutsideFieldDismissesKeyboard) {
+  UseEngineWithView(DummyHwnd());
+
+  TestBinaryMessenger messenger([](const std::string& channel,
+                                   const uint8_t* message, size_t message_size,
+                                   BinaryReply reply) {});
+  NiceMock<MockOnScreenKeyboard> keyboard;
+  NiceMock<MockTsfBridge> tsf;
+  TextInputPlugin handler(&messenger, engine(), &keyboard, &tsf);
+  SimulateSetClient(messenger);
+  EXPECT_CALL(*view(), OnCursorRectUpdated(_)).Times(AnyNumber());
+  SimulateEditableSizeAndTransform(messenger, 200.0, 48.0, 16.0, 80.0);
+
+  EXPECT_CALL(tsf, FocusNonEditable(DummyHwnd())).Times(1);
+  EXPECT_CALL(keyboard, Dismiss(DummyHwnd())).Times(1);
+  EXPECT_CALL(keyboard, Display(_)).Times(0);
+  handler.SetLastPointerKind(kFlutterPointerDeviceKindTouch, 12.0, 12.0);
+}
+
+TEST_F(TextInputPluginTest, PointerWithoutClientDismissesKeyboard) {
+  UseEngineWithView(DummyHwnd());
+
+  TestBinaryMessenger messenger([](const std::string& channel,
+                                   const uint8_t* message, size_t message_size,
+                                   BinaryReply reply) {});
+  NiceMock<MockOnScreenKeyboard> keyboard;
+  NiceMock<MockTsfBridge> tsf;
+  TextInputPlugin handler(&messenger, engine(), &keyboard, &tsf);
+  SimulateSetClient(messenger);
+  EXPECT_CALL(*view(), OnResetImeComposing());
+  SimulateTextInputMethod(messenger, kClearClientMethod);
+
+  EXPECT_CALL(tsf, FocusNonEditable(DummyHwnd())).Times(1);
+  EXPECT_CALL(keyboard, Dismiss(DummyHwnd())).Times(1);
+  EXPECT_CALL(keyboard, Display(_)).Times(0);
+  EXPECT_CALL(keyboard, OnUserGesture()).Times(0);
+  handler.SetLastPointerKind(kFlutterPointerDeviceKindTouch, 12.0, 12.0);
+}
+
+TEST_F(TextInputPluginTest, PointerInFieldWhileSuppressedDisplaysWithoutShow) {
+  UseEngineWithView(DummyHwnd());
+
+  TestBinaryMessenger messenger([](const std::string& channel,
+                                   const uint8_t* message, size_t message_size,
+                                   BinaryReply reply) {});
+  NiceMock<MockOnScreenKeyboard> keyboard;
+  NiceMock<MockTsfBridge> tsf;
+  TextInputPlugin handler(&messenger, engine(), &keyboard, &tsf);
+  TextInputPluginModifier modifier(&handler);
+  modifier.SetWindowHasFocus(true);
+  SimulateSetClient(messenger);
+  EXPECT_CALL(*view(), OnCursorRectUpdated(_)).Times(AnyNumber());
+  SimulateEditableSizeAndTransform(messenger, 200.0, 48.0, 16.0, 80.0);
+
+  ON_CALL(keyboard, display_suppressed()).WillByDefault(Return(true));
+  handler.OnOnScreenKeyboardHidden();
+
+  EXPECT_CALL(keyboard, OnUserGesture()).Times(AtLeast(1));
+  EXPECT_CALL(tsf, FocusEditable(DummyHwnd(), &handler)).Times(AtLeast(1));
+  EXPECT_CALL(keyboard, Display(DummyHwnd())).Times(1);
+  EXPECT_CALL(tsf, FocusNonEditable(_)).Times(0);
+  handler.SetLastPointerKind(kFlutterPointerDeviceKindTouch, 40.0, 100.0);
 }
 
 }  // namespace testing
