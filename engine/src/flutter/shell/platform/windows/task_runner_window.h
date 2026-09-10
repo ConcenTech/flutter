@@ -68,8 +68,10 @@ class TaskRunnerWindow {
 
   // Triggers processing delegate tasks on main thread.
   //
-  // Posts a private WM_APP message, not WM_NULL. TSF GetMessage hooks
-  // drop WM_NULL, which stalls vsync until a real input event arrives.
+  // Cross-thread wakes use SendNotifyMessage so TSF's WH_GETMESSAGE hook
+  // cannot drop them. Same-thread wakes post a private message and arm a
+  // Win32 timer; the window procedure also treats WM_NULL as a wake because
+  // that hook rewrites posted messages to WM_NULL.
   void WakeUp();
 
   void AddDelegate(Delegate* delegate);
@@ -84,6 +86,8 @@ class TaskRunnerWindow {
   TaskRunnerWindow();
 
   void ProcessTasks();
+
+  void OnWake();
 
   void SetTimer(std::chrono::nanoseconds when);
 
