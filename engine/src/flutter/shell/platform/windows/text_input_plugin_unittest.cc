@@ -1340,7 +1340,7 @@ TEST_F(TextInputPluginTest, PointerOutsideFieldDismissesKeyboard) {
   handler.SetLastPointerKind(kFlutterPointerDeviceKindTouch, 12.0, 12.0);
 }
 
-TEST_F(TextInputPluginTest, PointerWithoutClientDismissesKeyboard) {
+TEST_F(TextInputPluginTest, PointerWithoutClientDoesNotDismissOrRefocusTsf) {
   UseEngineWithView(DummyHwnd());
 
   TestBinaryMessenger messenger([](const std::string& channel,
@@ -1353,8 +1353,10 @@ TEST_F(TextInputPluginTest, PointerWithoutClientDismissesKeyboard) {
   EXPECT_CALL(*view(), OnResetImeComposing());
   SimulateTextInputMethod(messenger, kClearClientMethod);
 
-  EXPECT_CALL(tsf, FocusNonEditable(DummyHwnd())).Times(1);
-  EXPECT_CALL(keyboard, Dismiss(DummyHwnd())).Times(1);
+  // Chromium applies NONE at clearClient, not on later UI taps.
+  EXPECT_CALL(tsf, FocusNonEditable(_)).Times(0);
+  EXPECT_CALL(tsf, FocusEditable(_, _)).Times(0);
+  EXPECT_CALL(keyboard, Dismiss(_)).Times(0);
   EXPECT_CALL(keyboard, Display(_)).Times(0);
   EXPECT_CALL(keyboard, OnUserGesture()).Times(0);
   handler.SetLastPointerKind(kFlutterPointerDeviceKindTouch, 12.0, 12.0);

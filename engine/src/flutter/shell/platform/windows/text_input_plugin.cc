@@ -570,10 +570,12 @@ void TextInputPlugin::SetLastPointerKind(FlutterPointerDeviceKind device_kind,
   last_pointer_y_ = y;
   pointer_since_dismiss_ = true;
 
-  // Chromium TEXT_INPUT_TYPE_NONE: tap-outside / no client. TSF HWND
-  // association plus InputPane TryHide (TS_SD_INPUTPANEMANUALDISPLAYENABLE
-  // means AssociateFocus alone does not hide the pane). Field-to-field
-  // Dismiss then Display coalesces to show via the 300 ms debounce.
+  // Chromium TEXT_INPUT_TYPE_NONE when the user focuses non-editable UI.
+  // Flutter tap-outside does not clearClient, so this is the type change:
+  // AssociateFocus(empty) once, plus TryHide (MANUALDISPLAYENABLE).
+  // Do not do this when there is no client. Chromium associates NONE at
+  // the type change (clearClient), not on later taps; AssociateFocus or
+  // TryHide on those taps fights OS auto-show and pops the keyboard.
   if (ShouldTreatPointerAsNonEditable()) {
     FocusTsfNonEditable();
     DismissOnScreenKeyboard();
@@ -684,11 +686,10 @@ bool TextInputPlugin::ShouldUnsuppressForPointer() const {
 }
 
 bool TextInputPlugin::ShouldTreatPointerAsNonEditable() const {
-  if (active_model_ == nullptr) {
-    return true;
-  }
-  return editable_width_ > 0.0 && editable_height_ > 0.0 &&
-         !LastPointerHitsEditableField();
+  // Only a miss while a client is attached. No client means NONE was
+  // already applied at clearClient (Chromium OnTextInputTypeChanged).
+  return active_model_ != nullptr && editable_width_ > 0.0 &&
+         editable_height_ > 0.0 && !LastPointerHitsEditableField();
 }
 
 bool TextInputPlugin::LastPointerHitsEditableField() const {

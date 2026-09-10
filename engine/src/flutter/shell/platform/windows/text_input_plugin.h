@@ -92,11 +92,14 @@ class TextInputPlugin : public TsfTextStoreDelegate {
   // Does not clear InputPane display suppression; that requires a later
   // pointer on the active text field (not AppBar back or other controls).
   //
-  // A pointer that misses the active field, or a pointer with no client
-  // (route pop, then UI tap), is Chromium TEXT_INPUT_TYPE_NONE:
-  // AssociateFocus the HWND to the empty TSF document and TryHide.
-  // Flutter tap-outside does not clearClient, and MANUALDISPLAYENABLE
-  // means AssociateFocus alone does not hide the InputPane.
+  // A pointer that misses the active field is Chromium TEXT_INPUT_TYPE_NONE:
+  // AssociateFocus the HWND to the empty TSF document and TryHide. Flutter
+  // tap-outside does not clearClient, and MANUALDISPLAYENABLE means
+  // AssociateFocus alone does not hide the InputPane.
+  //
+  // A pointer with no client must not AssociateFocus or TryHide. Chromium
+  // applies NONE at the type change (clearClient), not on later taps;
+  // doing so fights OS auto-show and pops the keyboard.
   //
   // A touch/pen pointer that hits the field unsuppresses and Displays
   // immediately so a still-focused field after a user SIP dismiss does
