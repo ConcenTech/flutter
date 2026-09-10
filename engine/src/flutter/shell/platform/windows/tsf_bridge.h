@@ -112,6 +112,7 @@ class TsfBridgeWin : public TsfBridge {
   TfEditCookie edit_cookie_ = TF_INVALID_EDIT_COOKIE;
   TfEditCookie empty_edit_cookie_ = TF_INVALID_EDIT_COOKIE;
   HWND associated_hwnd_ = nullptr;
+  bool empty_associated_ = false;
   bool available_ = false;
 
   FML_DISALLOW_COPY_AND_ASSIGN(TsfBridgeWin);
