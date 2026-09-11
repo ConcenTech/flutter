@@ -101,6 +101,18 @@ TEST(OnScreenKeyboardTest, DisplayAppliesAfterDebounce) {
   EXPECT_TRUE(applies[0].show);
 }
 
+TEST(OnScreenKeyboardTest, DismissWhileAlreadyHiddenIsNoOp) {
+  MockTaskRunner runner;
+  std::vector<ApplyCall> applies;
+  RecordingOnScreenKeyboard keyboard(&runner, &applies);
+
+  keyboard.Dismiss(DummyHwnd());
+  runner.AdvanceTime(OnScreenKeyboardWin::kDisplayDismissDebounce);
+  runner.SimulateTimerAwake();
+
+  EXPECT_TRUE(applies.empty());
+}
+
 TEST(OnScreenKeyboardTest, DisplayThenDismissCoalescesToHide) {
   MockTaskRunner runner;
   std::vector<ApplyCall> applies;
@@ -332,13 +344,15 @@ TEST(OnScreenKeyboardTest, RequestedHideDoesNotSuppressDisplay) {
   keyboard.Display(hwnd);
   runner.AdvanceTime(OnScreenKeyboardWin::kDisplayDismissDebounce);
   runner.SimulateTimerAwake();
+  keyboard.HandleVisibilityEvent(true, OnScreenKeyboardWin::DipRect{}, 1.0,
+                                 POINT{0, 0}, RECT{});
   applies.clear();
 
   keyboard.Dismiss(hwnd);
-  keyboard.HandleVisibilityEvent(false, OnScreenKeyboardWin::DipRect{}, 1.0,
-                                 POINT{0, 0}, RECT{});
   runner.AdvanceTime(OnScreenKeyboardWin::kDisplayDismissDebounce);
   runner.SimulateTimerAwake();
+  keyboard.HandleVisibilityEvent(false, OnScreenKeyboardWin::DipRect{}, 1.0,
+                                 POINT{0, 0}, RECT{});
   applies.clear();
 
   keyboard.Display(hwnd);
