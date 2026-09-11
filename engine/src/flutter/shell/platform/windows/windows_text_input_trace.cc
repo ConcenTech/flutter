@@ -29,9 +29,9 @@ void WriteWindowsTextInputTrace(const char* component,
                                 const std::string& message) {
   static std::atomic_uint64_t sequence = 0;
   const uint64_t event = ++sequence;
-  FML_LOG(INFO) << "[Windows TSF trace #" << event
-                << " thread=" << GetCurrentThreadId() << " " << component
-                << "] " << message;
+  FML_LOG(WARNING) << "[Windows TSF trace #" << event
+                   << " thread=" << GetCurrentThreadId() << " " << component
+                   << "] " << message;
 }
 
 }  // namespace flutter
