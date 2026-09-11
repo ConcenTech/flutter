@@ -8,10 +8,12 @@
 #include <windows.h>
 
 #include <array>
+#include <cstdint>
 #include <map>
 #include <memory>
 
 #include "flutter/fml/macros.h"
+#include "flutter/fml/memory/weak_ptr.h"
 #include "flutter/shell/geometry/geometry.h"
 #include "flutter/shell/platform/common/client_wrapper/include/flutter/binary_messenger.h"
 #include "flutter/shell/platform/common/client_wrapper/include/flutter/method_channel.h"
@@ -86,16 +88,11 @@ class TextInputPlugin : public TsfTextStoreDelegate {
   // stale references. The implicit view is excluded from this reset.
   void OnViewRemoved(FlutterViewId view_id);
 
-  // Records the device kind and location of the most recent pointer event.
+  // Records the device kind of the most recent pointer event.
   //
   // |TextInput.show| requests the on-screen keyboard only for touch or pen.
-  // Does not clear InputPane display suppression; that requires a later
-  // pointer on the active text field (not AppBar back or other controls).
-  //
-  // A pointer that misses the active field, with a client still attached,
-  // is Chromium TEXT_INPUT_TYPE_NONE: AssociateFocus the HWND to the empty
-  // TSF document so OS SIP heuristics stop. Flutter tap-outside does not
-  // clearClient.
+  // Pointer coordinates are accepted for diagnostics only. Focus changes are
+  // owned by the framework's text-input lifecycle, not engine hit testing.
   void SetLastPointerKind(FlutterPointerDeviceKind device_kind,
                           double x = 0.0,
                           double y = 0.0);
@@ -167,15 +164,20 @@ class TextInputPlugin : public TsfTextStoreDelegate {
   // Focuses the TSF editable or non-editable document for the active view.
   void FocusTsfEditable();
   void FocusTsfNonEditable();
+  void AbortTsfComposition();
 
-  // Focuses the editable TSF document unless display is suppressed and the
-  // last pointer was not a tap on the active text field (e.g. AppBar back).
+  // Defers the non-editable document switch so a field-to-field
+  // clearClient/setClient pair does not hide the keyboard between fields.
+  void ScheduleTsfNonEditable();
+  void CancelPendingTsfNonEditable();
+
+  // Focuses the editable TSF document unless display is suppressed and there
+  // has not been a new pointer gesture.
   void FocusTsfEditableIfAllowed();
 
   bool DisplayIsSuppressed() const;
   void AcceptDisplayAfterGesture();
   bool ShouldUnsuppressForPointer() const;
-  bool LastPointerHitsEditableField() const;
 
   // The MethodChannel used for communication with the Flutter engine.
   std::unique_ptr<flutter::MethodChannel<rapidjson::Document>> channel_;
@@ -199,14 +201,8 @@ class TextInputPlugin : public TsfTextStoreDelegate {
   // document or calling TryShow.
   bool pointer_since_dismiss_ = true;
 
-  // Last pointer-down location, in physical view pixels.
-  double last_pointer_x_ = 0.0;
-  double last_pointer_y_ = 0.0;
-
-  // Size of the active EditableText, in local logical pixels. Updated via
-  // TextInput.setEditableSizeAndTransform.
-  double editable_width_ = 0.0;
-  double editable_height_ = 0.0;
+  // Incremented to cancel a deferred non-editable TSF document switch.
+  uint64_t tsf_focus_generation_ = 0;
 
   // When true, |ClientWindowHasFocus| uses |window_has_focus_override_|
   // instead of GetFocus(). Tests set this via TextInputPluginModifier.
@@ -249,6 +245,8 @@ class TextInputPlugin : public TsfTextStoreDelegate {
       0.0, 0.0, 0.0, 0.0,  //
       0.0, 0.0, 0.0, 0.0,  //
       0.0, 0.0, 0.0, 0.0};
+
+  fml::WeakPtrFactory<TextInputPlugin> weak_factory_;
 
   FML_DISALLOW_COPY_AND_ASSIGN(TextInputPlugin);
 };

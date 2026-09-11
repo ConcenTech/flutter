@@ -7,13 +7,13 @@
 #include <windows.h>
 
 #include <algorithm>
+#include <chrono>
 #include <cstdint>
 #include <sstream>
 
 #include "flutter/fml/string_conversion.h"
 #include "flutter/shell/platform/common/json_method_codec.h"
 #include "flutter/shell/platform/common/text_editing_delta.h"
-#include "flutter/shell/platform/windows/dpi_utils.h"
 #include "flutter/shell/platform/windows/flutter_windows_engine.h"
 #include "flutter/shell/platform/windows/flutter_windows_view.h"
 #include "flutter/shell/platform/windows/on_screen_keyboard.h"
@@ -68,6 +68,7 @@ static constexpr char kInternalConsistencyError[] =
     "Internal Consistency Error";
 
 static constexpr char kInputActionNewline[] = "TextInputAction.newline";
+static constexpr std::chrono::milliseconds kTsfFocusDebounce(300);
 
 namespace flutter {
 
@@ -122,7 +123,8 @@ TextInputPlugin::TextInputPlugin(flutter::BinaryMessenger* messenger,
       engine_(engine),
       on_screen_keyboard_(on_screen_keyboard),
       tsf_bridge_(tsf_bridge),
-      active_model_(nullptr) {
+      active_model_(nullptr),
+      weak_factory_(this) {
   channel_->SetMethodCallHandler(
       [this](
           const flutter::MethodCall<rapidjson::Document>& call,
@@ -251,8 +253,9 @@ void TextInputPlugin::HandleMethodCall(
       SendStateUpdate(*active_model_);
     }
     view->OnResetImeComposing();
+    AbortTsfComposition();
     active_model_ = nullptr;
-    FocusTsfNonEditable();
+    ScheduleTsfNonEditable();
     if (on_screen_keyboard_) {
       on_screen_keyboard_->OnClientCleared();
     }
@@ -306,6 +309,7 @@ void TextInputPlugin::HandleMethodCall(
         input_type_ = input_type_json->value.GetString();
       }
     }
+    CancelPendingTsfNonEditable();
     active_model_ = std::make_unique<TextInputModel>();
     TraceWindowsTextInput("channel", "setClient attached client_id=", client_id_,
                           " view_id=", view_id_, " input_type=", input_type_);
@@ -433,17 +437,9 @@ void TextInputPlugin::HandleMethodCall(
       editabletext_transform_[i / 4][i % 4] = entry.GetDouble();
       ++i;
     }
-    auto width = args.FindMember(kWidthKey);
-    auto height = args.FindMember(kHeightKey);
-    if (width != args.MemberEnd() && width->value.IsNumber()) {
-      editable_width_ = width->value.GetDouble();
-    }
-    if (height != args.MemberEnd() && height->value.IsNumber()) {
-      editable_height_ = height->value.GetDouble();
-    }
     TraceWindowsTextInput(
-        "channel", "setEditableSizeAndTransform view_id=", view_id_, " size=(",
-        editable_width_, ",", editable_height_, ") transform_origin=(",
+        "channel", "setEditableSizeAndTransform view_id=", view_id_,
+        " transform_origin=(",
         editabletext_transform_[3][0], ",", editabletext_transform_[3][1],
         ")");
     Rect transformed_rect = GetCursorRect();
@@ -562,6 +558,7 @@ void TextInputPlugin::OnViewRemoved(FlutterViewId view_id) {
 
   // Dismiss while the view is still registered so the HWND is valid.
   DismissOnScreenKeyboard();
+  CancelPendingTsfNonEditable();
   FocusTsfNonEditable();
 
   // If composing, commit and end composing. Skip sending state updates and
@@ -579,30 +576,12 @@ void TextInputPlugin::SetLastPointerKind(FlutterPointerDeviceKind device_kind,
                                          double x,
                                          double y) {
   last_pointer_kind_ = device_kind;
-  last_pointer_x_ = x;
-  last_pointer_y_ = y;
   pointer_since_dismiss_ = true;
 
-  const bool has_editable_bounds =
-      editable_width_ > 0.0 && editable_height_ > 0.0;
-  const bool hits_editable =
-      active_model_ != nullptr && has_editable_bounds &&
-      LastPointerHitsEditableField();
   TraceWindowsTextInput(
       "pointer", "down kind=", static_cast<int>(device_kind), " physical=(",
       x, ",", y, ") view_id=", view_id_, " hwnd=", GetClientWindowHandle(),
-      " client_attached=", active_model_ != nullptr,
-      " editable_bounds_known=", has_editable_bounds,
-      " hits_editable=", hits_editable);
-
-  // Chromium switches to TEXT_INPUT_TYPE_NONE when the user focuses
-  // non-editable UI. Flutter tap-outside / AppBar back / controls do not
-  // clearClient, so bind the HWND to the NONE document on a miss.
-  if (active_model_ != nullptr && has_editable_bounds && !hits_editable) {
-    TraceWindowsTextInput("policy",
-                          "pointer missed editable; focus non-editable TSF");
-    FocusTsfNonEditable();
-  }
+      " client_attached=", active_model_ != nullptr);
 }
 
 void TextInputPlugin::OnOnScreenKeyboardHidden() {
@@ -659,12 +638,11 @@ void TextInputPlugin::MaybeDisplayOnScreenKeyboard() {
       TraceWindowsTextInput(
           "policy",
           "show ignored because display is suppressed; pointer_since_dismiss=",
-          pointer_since_dismiss_,
-          " hits_editable=", LastPointerHitsEditableField());
+          pointer_since_dismiss_);
       return;
     }
-    TraceWindowsTextInput(
-        "policy", "show accepted after pointer hit suppressed editable");
+    TraceWindowsTextInput("policy",
+                          "show accepted after a new pointer gesture");
     AcceptDisplayAfterGesture();
     FocusTsfEditable();
   }
@@ -694,6 +672,7 @@ void TextInputPlugin::DismissOnScreenKeyboard() {
 }
 
 void TextInputPlugin::FocusTsfEditable() {
+  CancelPendingTsfNonEditable();
   if (tsf_bridge_ == nullptr) {
     TraceWindowsTextInput("policy",
                           "editable TSF focus skipped; bridge unavailable");
@@ -711,13 +690,11 @@ void TextInputPlugin::FocusTsfEditableIfAllowed() {
           "policy",
           "editable TSF focus skipped because display is suppressed; "
           "pointer_since_dismiss=",
-          pointer_since_dismiss_,
-          " hits_editable=", LastPointerHitsEditableField());
+          pointer_since_dismiss_);
       return;
     }
-    TraceWindowsTextInput(
-        "policy",
-        "editable TSF focus accepted after pointer hit suppressed editable");
+    TraceWindowsTextInput("policy",
+                          "editable TSF focus accepted after a new gesture");
     AcceptDisplayAfterGesture();
   }
   FocusTsfEditable();
@@ -736,42 +713,7 @@ void TextInputPlugin::AcceptDisplayAfterGesture() {
 }
 
 bool TextInputPlugin::ShouldUnsuppressForPointer() const {
-  return pointer_since_dismiss_ && LastPointerHitsEditableField();
-}
-
-bool TextInputPlugin::LastPointerHitsEditableField() const {
-  if (editable_width_ <= 0.0 || editable_height_ <= 0.0) {
-    return false;
-  }
-  auto map = [this](double local_x, double local_y) {
-    const double x = local_x * editabletext_transform_[0][0] +
-                     local_y * editabletext_transform_[1][0] +
-                     editabletext_transform_[3][0];
-    const double y = local_x * editabletext_transform_[0][1] +
-                     local_y * editabletext_transform_[1][1] +
-                     editabletext_transform_[3][1];
-    return Point(x, y);
-  };
-  const Point top_left = map(0.0, 0.0);
-  const Point bottom_right = map(editable_width_, editable_height_);
-  const double left = std::min(top_left.x(), bottom_right.x());
-  const double right = std::max(top_left.x(), bottom_right.x());
-  const double top = std::min(top_left.y(), bottom_right.y());
-  const double bottom = std::max(top_left.y(), bottom_right.y());
-
-  double scale = 1.0;
-  HWND hwnd = GetClientWindowHandle();
-  if (hwnd != nullptr) {
-    const UINT dpi = GetDpiForHWND(hwnd);
-    if (dpi > 0) {
-      scale = static_cast<double>(dpi) / static_cast<double>(kDefaultDpi);
-    }
-  }
-  const double slop = 8.0;
-  const double x = last_pointer_x_ / scale;
-  const double y = last_pointer_y_ / scale;
-  return x >= left - slop && x <= right + slop && y >= top - slop &&
-         y <= bottom + slop;
+  return pointer_since_dismiss_;
 }
 
 void TextInputPlugin::FocusTsfNonEditable() {
@@ -786,6 +728,39 @@ void TextInputPlugin::FocusTsfNonEditable() {
                         hwnd);
   tsf_bridge_->AbortComposition();
   tsf_bridge_->FocusNonEditable(hwnd);
+}
+
+void TextInputPlugin::AbortTsfComposition() {
+  if (tsf_bridge_ != nullptr) {
+    TraceWindowsTextInput("policy", "abort TSF composition");
+    tsf_bridge_->AbortComposition();
+  }
+}
+
+void TextInputPlugin::ScheduleTsfNonEditable() {
+  if (tsf_bridge_ == nullptr) {
+    return;
+  }
+  const HWND hwnd = GetClientWindowHandle();
+  const uint64_t generation = ++tsf_focus_generation_;
+  TraceWindowsTextInput("policy", "queue non-editable TSF focus hwnd=", hwnd,
+                        " generation=", generation,
+                        " delay_ms=", kTsfFocusDebounce.count());
+  engine_->task_runner()->PostDelayedTask(
+      [weak = weak_factory_.GetWeakPtr(), generation, hwnd]() {
+        if (!weak || generation != weak->tsf_focus_generation_ ||
+            weak->active_model_ != nullptr) {
+          return;
+        }
+        TraceWindowsTextInput("policy", "apply non-editable TSF focus hwnd=",
+                              hwnd, " generation=", generation);
+        weak->tsf_bridge_->FocusNonEditable(hwnd);
+      },
+      kTsfFocusDebounce);
+}
+
+void TextInputPlugin::CancelPendingTsfNonEditable() {
+  ++tsf_focus_generation_;
 }
 
 std::u16string TextInputPlugin::GetTsfText() const {
