@@ -8,9 +8,8 @@
 
 #include <atomic>
 #include <cstdint>
+#include <cstdio>
 #include <cstring>
-
-#include "flutter/fml/logging.h"
 
 namespace flutter {
 
@@ -29,9 +28,10 @@ void WriteWindowsTextInputTrace(const char* component,
                                 const std::string& message) {
   static std::atomic_uint64_t sequence = 0;
   const uint64_t event = ++sequence;
-  FML_LOG(WARNING) << "[Windows TSF trace #" << event
-                   << " thread=" << GetCurrentThreadId() << " " << component
-                   << "] " << message;
+  std::fprintf(stderr, "[Windows TSF trace #%llu thread=%lu %s] %s\n",
+               static_cast<unsigned long long>(event), GetCurrentThreadId(),
+               component, message.c_str());
+  std::fflush(stderr);
 }
 
 }  // namespace flutter
