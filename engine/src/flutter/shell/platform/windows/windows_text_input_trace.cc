@@ -19,7 +19,7 @@ bool IsWindowsTextInputTraceEnabled() {
     char value[16] = {};
     const DWORD length = GetEnvironmentVariableA(
         "FLUTTER_WINDOWS_TSF_TRACE", value, sizeof(value));
-    return length > 0 && length < sizeof(value) &&
+    return length == 0 || length >= sizeof(value) ||
            std::strcmp(value, "0") != 0;
   }();
   return enabled;

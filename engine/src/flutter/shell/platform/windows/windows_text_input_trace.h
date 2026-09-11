@@ -13,9 +13,9 @@ namespace flutter {
 
 // Returns whether Windows TSF/InputPane diagnostic tracing is enabled.
 //
-// Tracing is opt-in to avoid adding noise to normal engine logs. Set the
-// FLUTTER_WINDOWS_TSF_TRACE environment variable to a value other than "0"
-// before starting the application to enable it.
+// Tracing defaults to enabled on this diagnostic branch. Set the
+// FLUTTER_WINDOWS_TSF_TRACE environment variable to "0" before starting the
+// application to disable it.
 bool IsWindowsTextInputTraceEnabled();
 
 // Writes one sequenced diagnostic event to the engine log.
