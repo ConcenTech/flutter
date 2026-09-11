@@ -5,6 +5,7 @@
 #include "flutter/shell/platform/windows/tsf_bridge.h"
 
 #include "flutter/fml/logging.h"
+#include "flutter/shell/platform/windows/windows_text_input_trace.h"
 
 namespace flutter {
 
@@ -29,7 +30,8 @@ void LogTsfFailure(const char* api, HRESULT hr) {
 }  // namespace
 
 TsfBridgeWin::TsfBridgeWin() {
-  Initialize();
+  const bool initialized = Initialize();
+  TraceWindowsTextInput("TSF", "bridge initialization available=", initialized);
 }
 
 TsfBridgeWin::~TsfBridgeWin() {
@@ -49,6 +51,7 @@ bool TsfBridgeWin::available() const {
 }
 
 bool TsfBridgeWin::Initialize() {
+  TraceWindowsTextInput("TSF", "initializing thread manager");
   TF_CreateThreadMgrFn create_thread_mgr = LoadCreateThreadMgr();
   if (!create_thread_mgr) {
     LogTsfFailure("LoadLibrary(msctf.dll)",
@@ -114,6 +117,10 @@ bool TsfBridgeWin::Initialize() {
   }
 
   available_ = true;
+  TraceWindowsTextInput(
+      "TSF", "thread manager activated client_id=", client_id_,
+      " empty_store=", empty_text_store_.Get() != nullptr,
+      " editable document ready");
   return true;
 }
 
@@ -126,8 +133,14 @@ void TsfBridgeWin::MaybeInitializeEmptyTextStore() {
       GUID_COMPARTMENT_EMPTYCONTEXT,
       reinterpret_cast<void**>(flag_empty_context.ReleaseAndGetAddressOf()));
   if (FAILED(hr) || !flag_empty_context) {
+    TraceWindowsTextInput(
+        "TSF", "empty-context capability unavailable; using context-free "
+               "non-editable document hr=0x",
+        std::hex, static_cast<unsigned long>(hr), std::dec);
     return;
   }
+  TraceWindowsTextInput(
+      "TSF", "empty-context capability available; creating disabled store");
 
   hr = Microsoft::WRL::MakeAndInitialize<TsfTextStore>(&empty_text_store_,
                                                        nullptr);
@@ -193,6 +206,8 @@ HRESULT TsfBridgeWin::InitializeDisabledContext(ITfContext* context) {
 
 void TsfBridgeWin::FocusEditable(HWND hwnd, TsfTextStoreDelegate* delegate) {
   if (!available_ || hwnd == nullptr) {
+    TraceWindowsTextInput("TSF", "FocusEditable ignored available=", available_,
+                          " hwnd=", hwnd);
     return;
   }
   if (text_store_) {
@@ -202,6 +217,8 @@ void TsfBridgeWin::FocusEditable(HWND hwnd, TsfTextStoreDelegate* delegate) {
   // document onto the HWND is what makes Windows SIP heuristics treat
   // every later tap in the window as an editor.
   HRESULT hr = thread_mgr_->SetFocus(editable_document_mgr_.Get());
+  TraceWindowsTextInput("TSF", "SetFocus(editable) hwnd=", hwnd, " hr=0x",
+                        std::hex, static_cast<unsigned long>(hr), std::dec);
   if (FAILED(hr)) {
     LogTsfFailure("SetFocus(editable)", hr);
   }
@@ -210,6 +227,8 @@ void TsfBridgeWin::FocusEditable(HWND hwnd, TsfTextStoreDelegate* delegate) {
 
 void TsfBridgeWin::FocusNonEditable(HWND hwnd) {
   if (!available_) {
+    TraceWindowsTextInput("TSF",
+                          "FocusNonEditable ignored; bridge unavailable");
     return;
   }
   if (text_store_) {
@@ -224,11 +243,18 @@ void TsfBridgeWin::FocusNonEditable(HWND hwnd) {
     Microsoft::WRL::ComPtr<ITfDocumentMgr> previous;
     HRESULT hr = thread_mgr_->AssociateFocus(
         associate_hwnd, empty_document_mgr_.Get(), &previous);
+    TraceWindowsTextInput("TSF", "AssociateFocus(non-editable) hwnd=",
+                          associate_hwnd, " empty_store=",
+                          empty_text_store_.Get() != nullptr, " hr=0x", std::hex,
+                          static_cast<unsigned long>(hr), std::dec);
     if (FAILED(hr)) {
       LogTsfFailure("AssociateFocus(empty)", hr);
     }
   } else {
     HRESULT hr = thread_mgr_->SetFocus(empty_document_mgr_.Get());
+    TraceWindowsTextInput("TSF",
+                          "SetFocus(non-editable) without associated HWND hr=0x",
+                          std::hex, static_cast<unsigned long>(hr), std::dec);
     if (FAILED(hr)) {
       LogTsfFailure("SetFocus(empty)", hr);
     }
@@ -238,6 +264,10 @@ void TsfBridgeWin::FocusNonEditable(HWND hwnd) {
 
 void TsfBridgeWin::AbortComposition() {
   if (!available_ || !editable_context_) {
+    TraceWindowsTextInput("TSF", "AbortComposition ignored available=",
+                          available_,
+                          " editable_context=",
+                          editable_context_.Get() != nullptr);
     return;
   }
   Microsoft::WRL::ComPtr<ITfContextOwnerCompositionServices> composition;
@@ -245,7 +275,9 @@ void TsfBridgeWin::AbortComposition() {
   if (FAILED(hr) || !composition) {
     return;
   }
-  composition->TerminateComposition(nullptr);
+  hr = composition->TerminateComposition(nullptr);
+  TraceWindowsTextInput("TSF", "TerminateComposition hr=0x", std::hex,
+                        static_cast<unsigned long>(hr), std::dec);
 }
 
 void TsfBridgeWin::NotifyTextChanged() {

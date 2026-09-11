@@ -143,6 +143,8 @@ source_set("flutter_windows_source") {
     "tsf_text_store.h",
     "wchar_util.cc",
     "wchar_util.h",
+    "windows_text_input_trace.cc",
+    "windows_text_input_trace.h",
     "window_binding_handler.h",
     "window_binding_handler_delegate.h",
     "window_manager.cc",

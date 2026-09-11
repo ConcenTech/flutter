@@ -9,6 +9,7 @@
 #include <cmath>
 
 #include "flutter/fml/logging.h"
+#include "flutter/shell/platform/windows/windows_text_input_trace.h"
 
 namespace flutter {
 
@@ -320,6 +321,9 @@ STDMETHODIMP TsfTextStore::SetText(DWORD /*dwFlags*/,
     inserted.assign(reinterpret_cast<const char16_t*>(pchText), cch);
   }
   if (delegate_) {
+    TraceWindowsTextInput("TSF store", "SetText range=[", acpStart, ",", acpEnd,
+                          ") inserted_length=", cch,
+                          " composing=", composing_);
     if (composing_) {
       delegate_->OnTsfComposeUpdate(inserted,
                                     static_cast<int>(inserted.size()));
@@ -586,6 +590,7 @@ STDMETHODIMP TsfTextStore::OnStartComposition(
   }
   *pfOk = TRUE;
   composing_ = true;
+  TraceWindowsTextInput("TSF store", "composition start");
   if (delegate_) {
     delegate_->OnTsfComposeBegin();
   }
@@ -595,12 +600,14 @@ STDMETHODIMP TsfTextStore::OnStartComposition(
 STDMETHODIMP TsfTextStore::OnUpdateComposition(
     ITfCompositionView* /*pComposition*/,
     ITfRange* /*pRangeNew*/) {
+  TraceWindowsTextInput("TSF store", "composition range updated");
   return S_OK;
 }
 
 STDMETHODIMP TsfTextStore::OnEndComposition(
     ITfCompositionView* /*pComposition*/) {
   composing_ = false;
+  TraceWindowsTextInput("TSF store", "composition end");
   if (delegate_) {
     delegate_->OnTsfComposeEnd();
   }
