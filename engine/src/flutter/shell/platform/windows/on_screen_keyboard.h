@@ -174,7 +174,8 @@ class OnScreenKeyboardWin : public OnScreenKeyboard {
   uint64_t generation_ = 0;
   HWND pending_hwnd_ = nullptr;
   bool pending_show_ = false;
-  bool hide_requested_ = false;
+  bool show_request_in_flight_ = false;
+  bool hide_request_in_flight_ = false;
   bool suppress_display_ = false;
   bool shown_ = false;
   double physical_bottom_inset_ = 0.0;

@@ -172,6 +172,12 @@ void OnScreenKeyboardWin::Display(HWND hwnd) {
 }
 
 void OnScreenKeyboardWin::Dismiss(HWND hwnd) {
+  if (!shown_ && !pending_show_ && !show_request_in_flight_) {
+    TraceWindowsTextInput(
+        "InputPane",
+        "Dismiss ignored because keyboard is hidden and no Display is pending");
+    return;
+  }
   TraceWindowsTextInput("InputPane", "Dismiss requested hwnd=", hwnd);
   RequestVisibility(hwnd, false);
 }
@@ -305,9 +311,6 @@ void OnScreenKeyboardWin::RequestVisibility(HWND hwnd, bool show) {
   const bool previous_show = pending_show_;
   pending_hwnd_ = hwnd;
   pending_show_ = show;
-  if (!show) {
-    hide_requested_ = true;
-  }
   const uint64_t generation = ++generation_;
   TraceWindowsTextInput(
       "InputPane", "queue ", show ? "Display" : "Dismiss", " hwnd=", hwnd,
@@ -327,6 +330,10 @@ void OnScreenKeyboardWin::RequestVisibility(HWND hwnd, bool show) {
         const bool show = weak->pending_show_;
         const HWND hwnd = weak->pending_hwnd_;
         weak->pending_show_ = false;
+        // Attribute a later Hiding callback only to the request that was
+        // actually applied, not one that was merely queued and superseded.
+        weak->show_request_in_flight_ = show;
+        weak->hide_request_in_flight_ = !show;
         weak->ApplyVisibility(hwnd, show);
       },
       kDisplayDismissDebounce);
@@ -467,9 +474,10 @@ void OnScreenKeyboardWin::HandleVisibilityEvent(
     const RECT& view_client_screen) {
   shown_ = shown;
   if (shown) {
+    show_request_in_flight_ = false;
     // Do not clear suppress_display_. An OS auto-show must not unlock
     // TryShow; only OnUserGesture (a pointer event) does.
-    hide_requested_ = false;
+    hide_request_in_flight_ = false;
     physical_bottom_inset_ = ComputePhysicalBottomInset(
         occluded_dip, dpi_scale, root_client_origin_screen, view_client_screen);
     TraceWindowsTextInput(
@@ -482,8 +490,9 @@ void OnScreenKeyboardWin::HandleVisibilityEvent(
         view_client_screen.bottom, ") physical_bottom_inset=",
         physical_bottom_inset_);
   } else {
-    const bool hide_was_requested = hide_requested_;
-    hide_requested_ = false;
+    show_request_in_flight_ = false;
+    const bool hide_was_requested = hide_request_in_flight_;
+    hide_request_in_flight_ = false;
     if (!hide_was_requested) {
       // The user dismissed the InputPane (taskbar, tap on the SIP, etc.).
       // Do not TryShow again until a new pointer gesture. Do not change
