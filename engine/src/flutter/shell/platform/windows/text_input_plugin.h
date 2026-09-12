@@ -97,11 +97,6 @@ class TextInputPlugin : public TsfTextStoreDelegate {
                           double x = 0.0,
                           double y = 0.0);
 
-  // Called when the InputPane hides. Does not change TSF: Chromium never
-  // updates TSF from InputPane events, and SetFocus on hide re-shows the
-  // SIP. The dismiss pointer does not count as a request to show.
-  void OnOnScreenKeyboardHidden();
-
   FlutterPointerDeviceKind last_pointer_kind() const {
     return last_pointer_kind_;
   }
@@ -171,14 +166,6 @@ class TextInputPlugin : public TsfTextStoreDelegate {
   void ScheduleTsfNonEditable();
   void CancelPendingTsfNonEditable();
 
-  // Focuses the editable TSF document unless display is suppressed and there
-  // has not been a new pointer gesture.
-  void FocusTsfEditableIfAllowed();
-
-  bool DisplayIsSuppressed() const;
-  void AcceptDisplayAfterGesture();
-  bool ShouldUnsuppressForPointer() const;
-
   // The MethodChannel used for communication with the Flutter engine.
   std::unique_ptr<flutter::MethodChannel<rapidjson::Document>> channel_;
 
@@ -195,11 +182,6 @@ class TextInputPlugin : public TsfTextStoreDelegate {
 
   // Device kind of the last pointer event. Mouse/unknown does not Display.
   FlutterPointerDeviceKind last_pointer_kind_ = kFlutterPointerDeviceKindMouse;
-
-  // False after a user SIP dismiss until the next pointer down. Prevents the
-  // dismiss tap and stale setClient/show from restoring an editable TSF
-  // document or calling TryShow.
-  bool pointer_since_dismiss_ = true;
 
   // Incremented to cancel a deferred non-editable TSF document switch.
   uint64_t tsf_focus_generation_ = 0;

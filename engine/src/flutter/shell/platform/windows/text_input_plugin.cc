@@ -313,7 +313,7 @@ void TextInputPlugin::HandleMethodCall(
     active_model_ = std::make_unique<TextInputModel>();
     TraceWindowsTextInput("channel", "setClient attached client_id=", client_id_,
                           " view_id=", view_id_, " input_type=", input_type_);
-    FocusTsfEditableIfAllowed();
+    FocusTsfEditable();
   } else if (method.compare(kSetEditingStateMethod) == 0) {
     if (!method_call.arguments() || method_call.arguments()->IsNull()) {
       result->Error(kBadArgumentError, "Method invoked without args");
@@ -576,20 +576,11 @@ void TextInputPlugin::SetLastPointerKind(FlutterPointerDeviceKind device_kind,
                                          double x,
                                          double y) {
   last_pointer_kind_ = device_kind;
-  pointer_since_dismiss_ = true;
 
   TraceWindowsTextInput(
       "pointer", "down kind=", static_cast<int>(device_kind), " physical=(",
       x, ",", y, ") view_id=", view_id_, " hwnd=", GetClientWindowHandle(),
       " client_attached=", active_model_ != nullptr);
-}
-
-void TextInputPlugin::OnOnScreenKeyboardHidden() {
-  // Do not FocusNonEditable here. Chromium never updates TSF from InputPane
-  // Hiding; TSF SetFocus/AssociateFocus on hide re-shows the SIP.
-  pointer_since_dismiss_ = false;
-  TraceWindowsTextInput("policy",
-                        "InputPane hidden; pointer_since_dismiss=false");
 }
 
 HWND TextInputPlugin::GetClientWindowHandle() const {
@@ -633,19 +624,6 @@ void TextInputPlugin::MaybeDisplayOnScreenKeyboard() {
                           " window_has_focus=", window_has_focus);
     return;
   }
-  if (DisplayIsSuppressed()) {
-    if (!ShouldUnsuppressForPointer()) {
-      TraceWindowsTextInput(
-          "policy",
-          "show ignored because display is suppressed; pointer_since_dismiss=",
-          pointer_since_dismiss_);
-      return;
-    }
-    TraceWindowsTextInput("policy",
-                          "show accepted after a new pointer gesture");
-    AcceptDisplayAfterGesture();
-    FocusTsfEditable();
-  }
   TraceWindowsTextInput("policy", "show requests Display hwnd=", hwnd);
   on_screen_keyboard_->Display(hwnd);
 }
@@ -681,39 +659,6 @@ void TextInputPlugin::FocusTsfEditable() {
   HWND hwnd = GetClientWindowHandle();
   TraceWindowsTextInput("policy", "focus editable TSF hwnd=", hwnd);
   tsf_bridge_->FocusEditable(hwnd, this);
-}
-
-void TextInputPlugin::FocusTsfEditableIfAllowed() {
-  if (DisplayIsSuppressed()) {
-    if (!ShouldUnsuppressForPointer()) {
-      TraceWindowsTextInput(
-          "policy",
-          "editable TSF focus skipped because display is suppressed; "
-          "pointer_since_dismiss=",
-          pointer_since_dismiss_);
-      return;
-    }
-    TraceWindowsTextInput("policy",
-                          "editable TSF focus accepted after a new gesture");
-    AcceptDisplayAfterGesture();
-  }
-  FocusTsfEditable();
-}
-
-bool TextInputPlugin::DisplayIsSuppressed() const {
-  return on_screen_keyboard_ != nullptr &&
-         on_screen_keyboard_->display_suppressed();
-}
-
-void TextInputPlugin::AcceptDisplayAfterGesture() {
-  if (on_screen_keyboard_ != nullptr &&
-      on_screen_keyboard_->display_suppressed()) {
-    on_screen_keyboard_->OnUserGesture();
-  }
-}
-
-bool TextInputPlugin::ShouldUnsuppressForPointer() const {
-  return pointer_since_dismiss_;
 }
 
 void TextInputPlugin::FocusTsfNonEditable() {

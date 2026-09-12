@@ -956,19 +956,6 @@ TEST_F(TextInputPluginTest, ShowWithTouchDisplaysKeyboard) {
   SimulateTextInputMethod(messenger, kShowMethod);
 }
 
-TEST_F(TextInputPluginTest, PointerKindDoesNotUnsuppressDisplay) {
-  UseEngineWithView(DummyHwnd());
-
-  TestBinaryMessenger messenger([](const std::string& channel,
-                                   const uint8_t* message, size_t message_size,
-                                   BinaryReply reply) {});
-  NiceMock<MockOnScreenKeyboard> keyboard;
-  TextInputPlugin handler(&messenger, engine(), &keyboard);
-
-  EXPECT_CALL(keyboard, OnUserGesture()).Times(0);
-  handler.SetLastPointerKind(kFlutterPointerDeviceKindTouch);
-}
-
 TEST_F(TextInputPluginTest, ShowWithMouseDoesNotDisplayKeyboard) {
   UseEngineWithView(DummyHwnd());
 
@@ -1151,73 +1138,6 @@ TEST_F(TextInputPluginTest, FieldToFieldClientSwapKeepsTsfEditable) {
   SimulateSetClient(messenger);
 }
 
-TEST_F(TextInputPluginTest, KeyboardHiddenDoesNotSwapTsf) {
-  UseEngineWithView(DummyHwnd());
-
-  TestBinaryMessenger messenger([](const std::string& channel,
-                                   const uint8_t* message, size_t message_size,
-                                   BinaryReply reply) {});
-  NiceMock<MockTsfBridge> tsf;
-  TextInputPlugin handler(&messenger, engine(), nullptr, &tsf);
-
-  SimulateSetClient(messenger);
-
-  EXPECT_CALL(tsf, AbortComposition()).Times(0);
-  EXPECT_CALL(tsf, FocusNonEditable(_)).Times(0);
-
-  handler.OnOnScreenKeyboardHidden();
-}
-
-TEST_F(TextInputPluginTest,
-       ShowWhileSuppressedWithoutNewPointerDoesNotDisplay) {
-  UseEngineWithView(DummyHwnd());
-
-  TestBinaryMessenger messenger([](const std::string& channel,
-                                   const uint8_t* message, size_t message_size,
-                                   BinaryReply reply) {});
-  NiceMock<MockOnScreenKeyboard> keyboard;
-  TextInputPlugin handler(&messenger, engine(), &keyboard);
-  TextInputPluginModifier modifier(&handler);
-  modifier.SetWindowHasFocus(true);
-  handler.SetLastPointerKind(kFlutterPointerDeviceKindTouch);
-  SimulateSetClient(messenger);
-
-  handler.OnOnScreenKeyboardHidden();
-  ON_CALL(keyboard, display_suppressed()).WillByDefault(Return(true));
-
-  EXPECT_CALL(keyboard, Display(_)).Times(0);
-  EXPECT_CALL(keyboard, OnUserGesture()).Times(0);
-
-  SimulateTextInputMethod(messenger, kShowMethod);
-}
-
-TEST_F(TextInputPluginTest,
-       ShowWhileSuppressedAfterNewPointerDisplaysWithoutHitTesting) {
-  UseEngineWithView(DummyHwnd());
-
-  TestBinaryMessenger messenger([](const std::string& channel,
-                                   const uint8_t* message, size_t message_size,
-                                   BinaryReply reply) {});
-  NiceMock<MockOnScreenKeyboard> keyboard;
-  NiceMock<MockTsfBridge> tsf;
-  TextInputPlugin handler(&messenger, engine(), &keyboard, &tsf);
-  TextInputPluginModifier modifier(&handler);
-  modifier.SetWindowHasFocus(true);
-  handler.SetLastPointerKind(kFlutterPointerDeviceKindTouch);
-  SimulateSetClient(messenger);
-  handler.OnOnScreenKeyboardHidden();
-  ON_CALL(keyboard, display_suppressed()).WillByDefault(Return(true));
-  EXPECT_CALL(tsf, AbortComposition()).Times(0);
-  EXPECT_CALL(tsf, FocusNonEditable(_)).Times(0);
-  handler.SetLastPointerKind(kFlutterPointerDeviceKindTouch, 12.0, 12.0);
-
-  EXPECT_CALL(keyboard, OnUserGesture()).Times(1);
-  EXPECT_CALL(tsf, FocusEditable(DummyHwnd(), &handler)).Times(1);
-  EXPECT_CALL(keyboard, Display(DummyHwnd())).Times(1);
-
-  SimulateTextInputMethod(messenger, kShowMethod);
-}
-
 TEST_F(TextInputPluginTest, PointerDoesNotChangeTsfDocument) {
   UseEngineWithView(DummyHwnd());
 
@@ -1231,28 +1151,6 @@ TEST_F(TextInputPluginTest, PointerDoesNotChangeTsfDocument) {
   EXPECT_CALL(tsf, AbortComposition()).Times(0);
   EXPECT_CALL(tsf, FocusNonEditable(_)).Times(0);
   handler.SetLastPointerKind(kFlutterPointerDeviceKindTouch, 12.0, 12.0);
-}
-
-TEST_F(TextInputPluginTest, SetClientWhileSuppressedWithoutPointerSkipsTsf) {
-  UseEngineWithView(DummyHwnd());
-
-  TestBinaryMessenger messenger([](const std::string& channel,
-                                   const uint8_t* message, size_t message_size,
-                                   BinaryReply reply) {});
-  NiceMock<MockOnScreenKeyboard> keyboard;
-  NiceMock<MockTsfBridge> tsf;
-  TextInputPlugin handler(&messenger, engine(), &keyboard, &tsf);
-
-  EXPECT_CALL(tsf, FocusEditable(DummyHwnd(), &handler)).Times(1);
-  SimulateSetClient(messenger);
-
-  handler.OnOnScreenKeyboardHidden();
-  ON_CALL(keyboard, display_suppressed()).WillByDefault(Return(true));
-
-  EXPECT_CALL(tsf, FocusEditable(_, _)).Times(0);
-  EXPECT_CALL(keyboard, OnUserGesture()).Times(0);
-
-  SimulateSetClient(messenger);
 }
 
 }  // namespace testing
