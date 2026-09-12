@@ -161,12 +161,6 @@ void OnScreenKeyboardWin::SetVisibilityChangedCallback(
 }
 
 void OnScreenKeyboardWin::Display(HWND hwnd) {
-  if (suppress_display_) {
-    TraceWindowsTextInput("InputPane",
-                          "Display ignored because display is suppressed hwnd=",
-                          hwnd);
-    return;
-  }
   TraceWindowsTextInput("InputPane", "Display requested hwnd=", hwnd);
   RequestVisibility(hwnd, true);
 }
@@ -182,20 +176,10 @@ void OnScreenKeyboardWin::Dismiss(HWND hwnd) {
   RequestVisibility(hwnd, false);
 }
 
-void OnScreenKeyboardWin::OnUserGesture() {
-  suppress_display_ = false;
-  TraceWindowsTextInput("InputPane",
-                        "user gesture cleared display suppression");
-}
-
 void OnScreenKeyboardWin::OnClientCleared() {
   TraceWindowsTextInput("InputPane",
                         "client cleared; cancel pending Display if present");
   CancelPendingDisplay();
-}
-
-bool OnScreenKeyboardWin::display_suppressed() const {
-  return suppress_display_;
 }
 
 bool OnScreenKeyboardWin::shown() const {
@@ -330,10 +314,8 @@ void OnScreenKeyboardWin::RequestVisibility(HWND hwnd, bool show) {
         const bool show = weak->pending_show_;
         const HWND hwnd = weak->pending_hwnd_;
         weak->pending_show_ = false;
-        // Attribute a later Hiding callback only to the request that was
-        // actually applied, not one that was merely queued and superseded.
+        // A Dismiss may supersede an applied Display before Showing arrives.
         weak->show_request_in_flight_ = show;
-        weak->hide_request_in_flight_ = !show;
         weak->ApplyVisibility(hwnd, show);
       },
       kDisplayDismissDebounce);
@@ -475,9 +457,6 @@ void OnScreenKeyboardWin::HandleVisibilityEvent(
   shown_ = shown;
   if (shown) {
     show_request_in_flight_ = false;
-    // Do not clear suppress_display_. An OS auto-show must not unlock
-    // TryShow; only OnUserGesture (a pointer event) does.
-    hide_request_in_flight_ = false;
     physical_bottom_inset_ = ComputePhysicalBottomInset(
         occluded_dip, dpi_scale, root_client_origin_screen, view_client_screen);
     TraceWindowsTextInput(
@@ -491,20 +470,8 @@ void OnScreenKeyboardWin::HandleVisibilityEvent(
         physical_bottom_inset_);
   } else {
     show_request_in_flight_ = false;
-    const bool hide_was_requested = hide_request_in_flight_;
-    hide_request_in_flight_ = false;
-    if (!hide_was_requested) {
-      // The user dismissed the InputPane (taskbar, tap on the SIP, etc.).
-      // Do not TryShow again until a new pointer gesture. Do not change
-      // TSF here: Chromium never updates TSF from InputPane Hiding.
-      suppress_display_ = true;
-      CancelPendingDisplay();
-    }
     physical_bottom_inset_ = 0.0;
-    TraceWindowsTextInput(
-        "InputPane", "Hiding hide_was_requested=", hide_was_requested,
-        " display_suppressed=", suppress_display_,
-        " physical_bottom_inset=0");
+    TraceWindowsTextInput("InputPane", "Hiding physical_bottom_inset=0");
   }
   NotifyVisibilityChanged();
 }
