@@ -1023,9 +1023,6 @@ void FlutterWindowsEngine::OnOnScreenKeyboardVisibilityChanged(
     double physical_bottom_inset) {
   TraceWindowsTextInput("engine", "keyboard visibility changed shown=", shown,
                         " physical_bottom_inset=", physical_bottom_inset);
-  if (!shown && text_input_plugin_) {
-    text_input_plugin_->OnOnScreenKeyboardHidden();
-  }
   std::vector<FlutterWindowsView*> views;
   {
     std::shared_lock read_lock(views_mutex_);
