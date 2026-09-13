@@ -204,6 +204,62 @@ TEST(OnScreenKeyboardTest, ComputeBottomInsetClampedToClientHeight) {
   EXPECT_EQ(OnScreenKeyboardWin::ComputeBottomInset(client, occluded), 600.0);
 }
 
+TEST(OnScreenKeyboardTest, SmallWindowMovesAboveOcclusionWithoutResizing) {
+  RECT window{100, 500, 600, 900};
+  RECT work_area{0, 0, 1000, 1000};
+  RECT occluded{0, 700, 1000, 1000};
+
+  RECT adjusted = OnScreenKeyboardWin::ComputeWindowRectAboveOcclusion(
+      window, work_area, occluded);
+
+  EXPECT_EQ(adjusted.left, 100);
+  EXPECT_EQ(adjusted.top, 300);
+  EXPECT_EQ(adjusted.right, 600);
+  EXPECT_EQ(adjusted.bottom, 700);
+}
+
+TEST(OnScreenKeyboardTest, TallWindowResizesToAvailableArea) {
+  RECT window{100, 50, 600, 950};
+  RECT work_area{0, 0, 1000, 1000};
+  RECT occluded{0, 700, 1000, 1000};
+
+  RECT adjusted = OnScreenKeyboardWin::ComputeWindowRectAboveOcclusion(
+      window, work_area, occluded);
+
+  EXPECT_EQ(adjusted.left, 100);
+  EXPECT_EQ(adjusted.top, 0);
+  EXPECT_EQ(adjusted.right, 600);
+  EXPECT_EQ(adjusted.bottom, 700);
+}
+
+TEST(OnScreenKeyboardTest, WindowAlreadyAboveOcclusionIsUnchanged) {
+  RECT window{100, 100, 600, 600};
+  RECT work_area{0, 0, 1000, 1000};
+  RECT occluded{0, 700, 1000, 1000};
+
+  RECT adjusted = OnScreenKeyboardWin::ComputeWindowRectAboveOcclusion(
+      window, work_area, occluded);
+
+  EXPECT_EQ(adjusted.left, window.left);
+  EXPECT_EQ(adjusted.top, window.top);
+  EXPECT_EQ(adjusted.right, window.right);
+  EXPECT_EQ(adjusted.bottom, window.bottom);
+}
+
+TEST(OnScreenKeyboardTest, WindowBesideOcclusionIsUnchanged) {
+  RECT window{0, 500, 400, 900};
+  RECT work_area{0, 0, 1200, 1000};
+  RECT occluded{600, 700, 1200, 1000};
+
+  RECT adjusted = OnScreenKeyboardWin::ComputeWindowRectAboveOcclusion(
+      window, work_area, occluded);
+
+  EXPECT_EQ(adjusted.left, window.left);
+  EXPECT_EQ(adjusted.top, window.top);
+  EXPECT_EQ(adjusted.right, window.right);
+  EXPECT_EQ(adjusted.bottom, window.bottom);
+}
+
 TEST(OnScreenKeyboardTest, OccludedDipAtScale1IsUnchangedPhysical) {
   OnScreenKeyboardWin::DipRect occluded{0, 400, 800, 200};
   POINT origin{0, 0};

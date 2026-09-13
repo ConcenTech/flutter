@@ -14,6 +14,8 @@
 #include <algorithm>
 #include <cmath>
 #include <cwchar>
+#include <mutex>
+#include <unordered_map>
 
 #include "flutter/fml/logging.h"
 #include "flutter/shell/platform/windows/dpi_utils.h"
@@ -41,6 +43,32 @@ using WindowsCreateStringReferenceFn = HRESULT(WINAPI*)(PCWSTR,
                                                         UINT32,
                                                         HSTRING_HEADER*,
                                                         HSTRING*);
+
+std::mutex g_move_size_hooks_mutex;
+std::unordered_map<HWINEVENTHOOK, OnScreenKeyboardWin*> g_move_size_hooks;
+
+void CALLBACK OnMoveSizeWinEvent(HWINEVENTHOOK hook,
+                                 DWORD event,
+                                 HWND hwnd,
+                                 LONG /*object_id*/,
+                                 LONG /*child_id*/,
+                                 DWORD /*event_thread*/,
+                                 DWORD /*event_time*/) {
+  if (event != EVENT_SYSTEM_MOVESIZEEND || hwnd == nullptr) {
+    return;
+  }
+  OnScreenKeyboardWin* keyboard = nullptr;
+  {
+    std::lock_guard<std::mutex> lock(g_move_size_hooks_mutex);
+    const auto iterator = g_move_size_hooks.find(hook);
+    if (iterator != g_move_size_hooks.end()) {
+      keyboard = iterator->second;
+    }
+  }
+  if (keyboard != nullptr) {
+    keyboard->OnRootWindowMoveSizeEnded(hwnd);
+  }
+}
 
 HMODULE CombaseModule() {
   static HMODULE module = LoadLibraryW(L"combase.dll");
@@ -153,7 +181,9 @@ OnScreenKeyboardWin::OnScreenKeyboardWin(TaskRunner* task_runner)
   FML_DCHECK(task_runner_);
 }
 
-OnScreenKeyboardWin::~OnScreenKeyboardWin() = default;
+OnScreenKeyboardWin::~OnScreenKeyboardWin() {
+  RestoreWindowAfterKeyboard();
+}
 
 void OnScreenKeyboardWin::SetVisibilityChangedCallback(
     VisibilityChanged callback) {
@@ -244,6 +274,33 @@ double OnScreenKeyboardWin::ComputePhysicalBottomInset(
   const RECT occluded_screen = OccludedDipToPhysicalScreenRect(
       occluded_dip, dpi_scale, root_client_origin_screen);
   return ComputeBottomInset(view_client_screen, occluded_screen);
+}
+
+RECT OnScreenKeyboardWin::ComputeWindowRectAboveOcclusion(
+    const RECT& window_screen,
+    const RECT& work_area,
+    const RECT& occluded_screen) {
+  const bool overlaps_horizontally =
+      window_screen.left < occluded_screen.right &&
+      window_screen.right > occluded_screen.left;
+  const LONG available_bottom =
+      std::min(work_area.bottom, occluded_screen.top);
+  if (!overlaps_horizontally || available_bottom <= work_area.top ||
+      window_screen.bottom <= available_bottom) {
+    return window_screen;
+  }
+
+  RECT result = window_screen;
+  const LONG window_height = window_screen.bottom - window_screen.top;
+  const LONG available_height = available_bottom - work_area.top;
+  if (window_height <= available_height) {
+    result.bottom = available_bottom;
+    result.top = available_bottom - window_height;
+  } else {
+    result.top = work_area.top;
+    result.bottom = available_bottom;
+  }
+  return result;
 }
 
 void OnScreenKeyboardWin::ApplyVisibility(HWND hwnd, bool show) {
@@ -363,8 +420,9 @@ bool OnScreenKeyboardWin::EnsureInputPane(HWND hwnd) {
   session->pane = pane;
 
   auto showing_handler = Callback<InputPaneVisibilityHandler>(
-      [runner = task_runner_, weak = weak_factory_.GetWeakPtr()](
-          IInputPane* /*sender*/, IInputPaneVisibilityEventArgs* args) {
+      [runner = task_runner_, weak = weak_factory_.GetWeakPtr(),
+       view_hwnd = hwnd](IInputPane* /*sender*/,
+                         IInputPaneVisibilityEventArgs* args) {
         DipRect occluded_dip{};
         if (args) {
           Rect occluded{};
@@ -375,8 +433,15 @@ bool OnScreenKeyboardWin::EnsureInputPane(HWND hwnd) {
             occluded_dip.height = occluded.Height;
           }
         }
+        // Capture the coordinate-space conversion with the event. The root
+        // window may move before the marshalled task runs.
+        HWND root = RootWindow(view_hwnd);
+        const double scale = static_cast<double>(GetDpiForHWND(root)) /
+                             static_cast<double>(kDefaultDpi);
+        POINT origin{0, 0};
+        ClientToScreen(root, &origin);
         // InputPane is not agile; marshal before touching engine state.
-        runner->RunNowOrPostTask([weak, occluded_dip]() {
+        runner->RunNowOrPostTask([weak, occluded_dip, scale, origin]() {
           if (!weak) {
             return;
           }
@@ -392,11 +457,6 @@ bool OnScreenKeyboardWin::EnsureInputPane(HWND hwnd) {
                 "Showing callback ignored because view HWND is invalid");
             return;
           }
-          HWND root = RootWindow(view);
-          const double scale = static_cast<double>(GetDpiForHWND(root)) /
-                               static_cast<double>(kDefaultDpi);
-          POINT origin{0, 0};
-          ClientToScreen(root, &origin);
           RECT view_client{};
           if (!MapClientRectToScreen(view, &view_client)) {
             TraceWindowsTextInput(
@@ -448,6 +508,120 @@ bool OnScreenKeyboardWin::EnsureInputPane(HWND hwnd) {
   return true;
 }
 
+void OnScreenKeyboardWin::OnRootWindowMoveSizeEnded(HWND hwnd) {
+  task_runner_->RunNowOrPostTask(
+      [weak = weak_factory_.GetWeakPtr(), hwnd]() {
+        if (!weak || !weak->shown_ || hwnd != weak->tracked_root_ ||
+            weak->applying_window_placement_) {
+          return;
+        }
+        weak->UpdateWindowForOcclusion(hwnd);
+        weak->NotifyVisibilityChanged();
+      });
+}
+
+void OnScreenKeyboardWin::StartTrackingWindow(HWND root) {
+  if (tracked_root_ == root) {
+    return;
+  }
+  if (original_window_placement_ && IsWindow(original_placement_root_)) {
+    applying_window_placement_ = true;
+    SetWindowPlacement(original_placement_root_, &*original_window_placement_);
+    applying_window_placement_ = false;
+    original_window_placement_.reset();
+    original_placement_root_ = nullptr;
+  }
+  StopTrackingWindow();
+  tracked_root_ = root;
+  move_size_hook_ = SetWinEventHook(
+      EVENT_SYSTEM_MOVESIZEEND, EVENT_SYSTEM_MOVESIZEEND, nullptr,
+      OnMoveSizeWinEvent, GetCurrentProcessId(), 0, WINEVENT_OUTOFCONTEXT);
+  if (move_size_hook_ != nullptr) {
+    std::lock_guard<std::mutex> lock(g_move_size_hooks_mutex);
+    g_move_size_hooks[move_size_hook_] = this;
+  }
+}
+
+void OnScreenKeyboardWin::StopTrackingWindow() {
+  if (move_size_hook_ != nullptr) {
+    {
+      std::lock_guard<std::mutex> lock(g_move_size_hooks_mutex);
+      g_move_size_hooks.erase(move_size_hook_);
+    }
+    UnhookWinEvent(move_size_hook_);
+    move_size_hook_ = nullptr;
+  }
+  tracked_root_ = nullptr;
+}
+
+void OnScreenKeyboardWin::UpdateWindowForOcclusion(HWND root) {
+  if (!IsWindow(root) || !has_occluded_physical_screen_) {
+    return;
+  }
+
+  RECT view_client_screen{};
+  HWND view = pane_session_ ? pane_session_->view_hwnd : nullptr;
+  if (IsZoomed(root) || IsIconic(root)) {
+    // A user-initiated maximize supersedes any placement that was saved while
+    // the keyboard was open.
+    original_window_placement_.reset();
+    original_placement_root_ = nullptr;
+    if (view != nullptr && MapClientRectToScreen(view, &view_client_screen)) {
+      physical_bottom_inset_ =
+          ComputeBottomInset(view_client_screen, occluded_physical_screen_);
+    }
+    return;
+  }
+
+  MONITORINFO monitor_info{};
+  monitor_info.cbSize = sizeof(monitor_info);
+  HMONITOR monitor = MonitorFromWindow(root, MONITOR_DEFAULTTONEAREST);
+  RECT window_screen{};
+  if (monitor == nullptr || !GetMonitorInfo(monitor, &monitor_info) ||
+      !GetWindowRect(root, &window_screen)) {
+    return;
+  }
+
+  const RECT adjusted = ComputeWindowRectAboveOcclusion(
+      window_screen, monitor_info.rcWork, occluded_physical_screen_);
+  if (adjusted.left != window_screen.left ||
+      adjusted.top != window_screen.top ||
+      adjusted.right != window_screen.right ||
+      adjusted.bottom != window_screen.bottom) {
+    if (!original_window_placement_) {
+      WINDOWPLACEMENT placement{};
+      placement.length = sizeof(placement);
+      if (GetWindowPlacement(root, &placement)) {
+        original_window_placement_ = placement;
+        original_placement_root_ = root;
+      }
+    }
+    applying_window_placement_ = true;
+    SetWindowPos(root, nullptr, adjusted.left, adjusted.top,
+                 adjusted.right - adjusted.left,
+                 adjusted.bottom - adjusted.top,
+                 SWP_NOACTIVATE | SWP_NOOWNERZORDER | SWP_NOZORDER);
+    applying_window_placement_ = false;
+  }
+
+  if (view != nullptr && MapClientRectToScreen(view, &view_client_screen)) {
+    physical_bottom_inset_ =
+        ComputeBottomInset(view_client_screen, occluded_physical_screen_);
+  }
+}
+
+void OnScreenKeyboardWin::RestoreWindowAfterKeyboard() {
+  StopTrackingWindow();
+  if (original_window_placement_ && IsWindow(original_placement_root_)) {
+    applying_window_placement_ = true;
+    SetWindowPlacement(original_placement_root_, &*original_window_placement_);
+    applying_window_placement_ = false;
+  }
+  original_window_placement_.reset();
+  original_placement_root_ = nullptr;
+  has_occluded_physical_screen_ = false;
+}
+
 void OnScreenKeyboardWin::HandleVisibilityEvent(
     bool shown,
     const DipRect& occluded_dip,
@@ -456,9 +630,20 @@ void OnScreenKeyboardWin::HandleVisibilityEvent(
     const RECT& view_client_screen) {
   shown_ = shown;
   if (shown) {
+    ++geometry_generation_;
     show_request_in_flight_ = false;
-    physical_bottom_inset_ = ComputePhysicalBottomInset(
-        occluded_dip, dpi_scale, root_client_origin_screen, view_client_screen);
+    occluded_physical_screen_ = OccludedDipToPhysicalScreenRect(
+        occluded_dip, dpi_scale, root_client_origin_screen);
+    has_occluded_physical_screen_ = true;
+    HWND view = pane_session_ ? pane_session_->view_hwnd : nullptr;
+    HWND root = view != nullptr ? RootWindow(view) : nullptr;
+    if (root != nullptr && IsWindow(root)) {
+      StartTrackingWindow(root);
+      UpdateWindowForOcclusion(root);
+    } else {
+      physical_bottom_inset_ =
+          ComputeBottomInset(view_client_screen, occluded_physical_screen_);
+    }
     TraceWindowsTextInput(
         "InputPane", "Showing dip_rect=(", occluded_dip.x, ",",
         occluded_dip.y, ",", occluded_dip.width, ",", occluded_dip.height,
@@ -472,6 +657,14 @@ void OnScreenKeyboardWin::HandleVisibilityEvent(
     show_request_in_flight_ = false;
     physical_bottom_inset_ = 0.0;
     TraceWindowsTextInput("InputPane", "Hiding physical_bottom_inset=0");
+    const uint64_t geometry_generation = ++geometry_generation_;
+    task_runner_->PostDelayedTask(
+        [weak = weak_factory_.GetWeakPtr(), geometry_generation]() {
+          if (weak && geometry_generation == weak->geometry_generation_) {
+            weak->RestoreWindowAfterKeyboard();
+          }
+        },
+        kDisplayDismissDebounce);
   }
   NotifyVisibilityChanged();
 }

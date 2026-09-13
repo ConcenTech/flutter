@@ -11,6 +11,7 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <optional>
 
 #include "flutter/fml/macros.h"
 #include "flutter/fml/memory/weak_ptr.h"
@@ -22,10 +23,12 @@ namespace flutter {
 //
 // Chromium: ui/base/ime/win/on_screen_keyboard_display_manager_input_pane.cc
 // Display and Dismiss request IInputPane2::TryShow / TryHide with a 300 ms
-// debounce. Showing / Hiding only update |shown| and the physical bottom
-// inset used for viewInsets. They do not change TSF (Chromium never updates
-// TSF from InputPane events). TSF HWND association, not this type, owns OS
-// SIP auto-invoke suppression.
+// debounce. For maximized windows, Showing / Hiding update the physical bottom
+// inset used for viewInsets. A restored window is moved or resized above the
+// keyboard and returned to its previous placement when the keyboard closes.
+// InputPane events do not change TSF (Chromium never updates TSF from those
+// events). TSF HWND association, not this type, owns OS SIP auto-invoke
+// suppression.
 class OnScreenKeyboard {
  public:
   using VisibilityChanged =
@@ -66,8 +69,8 @@ class OnScreenKeyboard {
 // Default |OnScreenKeyboard| implementation.
 //
 // Debounces Display/Dismiss on the platform |TaskRunner|, then drives WinRT
-// IInputPane2::TryShow / TryHide. Showing/Hiding update |shown| and the
-// bottom inset. Does not call TryHide from a Showing handler.
+// IInputPane2::TryShow / TryHide. Showing/Hiding update window avoidance and
+// the bottom inset. Does not call TryHide from a Showing handler.
 class OnScreenKeyboardWin : public OnScreenKeyboard {
  public:
   // OccludedRect from IInputPaneVisibilityEventArgs, in root-window client
@@ -126,6 +129,14 @@ class OnScreenKeyboardWin : public OnScreenKeyboard {
                                            POINT root_client_origin_screen,
                                            const RECT& view_client_screen);
 
+  // Returns the outer window rectangle that fits above |occluded_screen|
+  // within |work_area|. A window that fits retains its size and is moved only
+  // as far as necessary. A taller window is resized to the available height.
+  // Windows that are already clear of the occlusion are unchanged.
+  static RECT ComputeWindowRectAboveOcclusion(const RECT& window_screen,
+                                              const RECT& work_area,
+                                              const RECT& occluded_screen);
+
   // Applies a Showing/Hiding observation. |occluded_dip| is ignored when
   // |shown| is false. Exposed for tests.
   void HandleVisibilityEvent(bool shown,
@@ -133,6 +144,9 @@ class OnScreenKeyboardWin : public OnScreenKeyboard {
                              double dpi_scale,
                              POINT root_client_origin_screen,
                              const RECT& view_client_screen);
+
+  // Handles the end of an interactive move or resize reported by WinEvent.
+  void OnRootWindowMoveSizeEnded(HWND hwnd);
 
  protected:
   // Applies a coalesced show or hide via IInputPane2. Failures are ignored.
@@ -153,6 +167,11 @@ class OnScreenKeyboardWin : public OnScreenKeyboard {
   // failure (CO_E_NOTINITIALIZED, REGDB_E_CLASSNOTREG, invalid HWND).
   bool EnsureInputPane(HWND hwnd);
 
+  void UpdateWindowForOcclusion(HWND root);
+  void RestoreWindowAfterKeyboard();
+  void StartTrackingWindow(HWND root);
+  void StopTrackingWindow();
+
   TaskRunner* task_runner_;
   VisibilityChanged callback_;
   uint64_t generation_ = 0;
@@ -162,6 +181,14 @@ class OnScreenKeyboardWin : public OnScreenKeyboard {
   bool shown_ = false;
   double physical_bottom_inset_ = 0.0;
   std::unique_ptr<InputPaneSession> pane_session_;
+  HWND tracked_root_ = nullptr;
+  HWINEVENTHOOK move_size_hook_ = nullptr;
+  RECT occluded_physical_screen_{};
+  bool has_occluded_physical_screen_ = false;
+  bool applying_window_placement_ = false;
+  std::optional<WINDOWPLACEMENT> original_window_placement_;
+  HWND original_placement_root_ = nullptr;
+  uint64_t geometry_generation_ = 0;
 
   fml::WeakPtrFactory<OnScreenKeyboardWin> weak_factory_;
 
