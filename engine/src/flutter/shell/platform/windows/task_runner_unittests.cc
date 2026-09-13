@@ -6,6 +6,8 @@
 
 #include <atomic>
 #include <chrono>
+#include <condition_variable>
+#include <mutex>
 
 #include "flutter/fml/macros.h"
 #include "flutter/shell/platform/windows/task_runner_window.h"
@@ -118,6 +120,41 @@ TEST(TaskRunnerTest, TimerThreadDoesNotCancelEarlierScheduledTasks) {
   EXPECT_GE(*callback_time, now + std::chrono::milliseconds(20));
 
   timer_thread.Stop();
+}
+
+TEST(TaskRunnerTest, TimerThreadUsesRescheduledEarlierDeadline) {
+  std::mutex mutex;
+  std::condition_variable cv;
+  bool signaled = false;
+  std::optional<std::chrono::high_resolution_clock::time_point> callback_time;
+  TimerThread timer_thread([&]() {
+    std::lock_guard<std::mutex> lock(mutex);
+    callback_time = std::chrono::high_resolution_clock::now();
+    signaled = true;
+    cv.notify_one();
+  });
+  timer_thread.Start();
+
+  const auto original_deadline =
+      std::chrono::high_resolution_clock::now() + std::chrono::seconds(5);
+  timer_thread.ScheduleAt(original_deadline);
+  // Give the timer thread time to begin waiting for the original deadline.
+  std::this_thread::sleep_for(std::chrono::milliseconds(20));
+
+  const auto earlier_deadline = std::chrono::high_resolution_clock::now() +
+                                std::chrono::milliseconds(20);
+  timer_thread.ScheduleAt(earlier_deadline);
+
+  std::unique_lock<std::mutex> lock(mutex);
+  const bool fired_before_timeout = cv.wait_for(
+      lock, std::chrono::seconds(1), [&signaled]() { return signaled; });
+  lock.unlock();
+  timer_thread.Stop();
+
+  ASSERT_TRUE(fired_before_timeout);
+  ASSERT_TRUE(callback_time.has_value());
+  EXPECT_GE(*callback_time, earlier_deadline);
+  EXPECT_LT(*callback_time, original_deadline);
 }
 
 class TestTaskRunnerWindow : public TaskRunnerWindow {
