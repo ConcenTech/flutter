@@ -629,8 +629,9 @@ void OnScreenKeyboardWin::HandleVisibilityEvent(
     POINT root_client_origin_screen,
     const RECT& view_client_screen) {
   shown_ = shown;
+  bool notify_immediately = true;
   if (shown) {
-    ++geometry_generation_;
+    const uint64_t geometry_generation = ++geometry_generation_;
     show_request_in_flight_ = false;
     occluded_physical_screen_ = OccludedDipToPhysicalScreenRect(
         occluded_dip, dpi_scale, root_client_origin_screen);
@@ -639,7 +640,27 @@ void OnScreenKeyboardWin::HandleVisibilityEvent(
     HWND root = view != nullptr ? RootWindow(view) : nullptr;
     if (root != nullptr && IsWindow(root)) {
       StartTrackingWindow(root);
-      UpdateWindowForOcclusion(root);
+      if (IsZoomed(root)) {
+        // Maximized windows remain fixed and consume the occlusion as an
+        // inset, so there is no geometry animation to coalesce.
+        UpdateWindowForOcclusion(root);
+      } else {
+        // InputPane may report several intermediate rectangles while opening.
+        // Apply restored-window geometry only after the final observation has
+        // remained stable for the debounce interval.
+        notify_immediately = false;
+        task_runner_->PostDelayedTask(
+            [weak = weak_factory_.GetWeakPtr(), geometry_generation, root]() {
+              if (!weak || !weak->shown_ ||
+                  geometry_generation != weak->geometry_generation_ ||
+                  root != weak->tracked_root_) {
+                return;
+              }
+              weak->UpdateWindowForOcclusion(root);
+              weak->NotifyVisibilityChanged();
+            },
+            kDisplayDismissDebounce);
+      }
     } else {
       physical_bottom_inset_ =
           ComputeBottomInset(view_client_screen, occluded_physical_screen_);
@@ -666,7 +687,9 @@ void OnScreenKeyboardWin::HandleVisibilityEvent(
         },
         kDisplayDismissDebounce);
   }
-  NotifyVisibilityChanged();
+  if (notify_immediately) {
+    NotifyVisibilityChanged();
+  }
 }
 
 }  // namespace flutter
