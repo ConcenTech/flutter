@@ -12,6 +12,7 @@
 #include <thread>
 
 #include "flutter/fml/logging.h"
+#include "flutter/shell/platform/windows/windows_text_input_trace.h"
 
 namespace flutter {
 
@@ -117,6 +118,11 @@ TaskRunnerWindow::~TaskRunnerWindow() {
 }
 
 void TaskRunnerWindow::OnTimer() {
+  if (active_delayed_task_traces_ > 0) {
+    TraceWindowsTextInput("TaskRunner", "timer thread reached deadline",
+                          " active_probes=", active_delayed_task_traces_.load(),
+                          " wake_posted=", wake_up_posted_.load());
+  }
   WakeUp();
 }
 
@@ -143,10 +149,41 @@ void TaskRunnerWindow::WakeUp() {
   // get flooded possibly resulting in application stopping to respond.
   // https://github.com/flutter/flutter/issues/173843
   if (wake_up_posted_.compare_exchange_strong(expected, true)) {
-    if (!PostMessage(window_handle_, WM_NULL, 0, 0)) {
+    const BOOL posted = PostMessage(window_handle_, WM_NULL, 0, 0);
+    if (active_delayed_task_traces_ > 0) {
+      TraceWindowsTextInput(
+          "TaskRunner", "WakeUp post WM_NULL result=", posted != FALSE,
+          " active_probes=", active_delayed_task_traces_.load(),
+          " caller_thread=", GetCurrentThreadId(),
+          " target_thread=", thread_id_);
+    }
+    if (!posted) {
       FML_LOG(ERROR) << "Failed to post message to main thread.";
     }
+  } else if (active_delayed_task_traces_ > 0) {
+    TraceWindowsTextInput(
+        "TaskRunner", "WakeUp coalesced because WM_NULL is already pending",
+        " active_probes=", active_delayed_task_traces_.load(),
+        " caller_thread=", GetCurrentThreadId(),
+        " target_thread=", thread_id_);
   }
+}
+
+uint64_t TaskRunnerWindow::BeginDelayedTaskTrace(
+    std::chrono::milliseconds delay) {
+  const uint64_t trace_id = ++next_delayed_task_trace_id_;
+  ++active_delayed_task_traces_;
+  TraceWindowsTextInput("TaskRunner", "begin delayed task probe id=", trace_id,
+                        " delay_ms=", delay.count(),
+                        " active_probes=", active_delayed_task_traces_.load());
+  return trace_id;
+}
+
+void TaskRunnerWindow::CompleteDelayedTaskTrace(uint64_t trace_id) {
+  TraceWindowsTextInput(
+      "TaskRunner", "execute delayed task probe id=", trace_id,
+      " active_probes_before=", active_delayed_task_traces_.load());
+  --active_delayed_task_traces_;
 }
 
 void TaskRunnerWindow::AddDelegate(Delegate* delegate) {
@@ -172,6 +209,12 @@ void TaskRunnerWindow::PollOnce(std::chrono::milliseconds timeout) {
 }
 
 void TaskRunnerWindow::ProcessTasks() {
+  const bool trace_delayed_task = active_delayed_task_traces_ > 0;
+  if (trace_delayed_task) {
+    TraceWindowsTextInput(
+        "TaskRunner", "ProcessTasks begin active_probes=",
+        active_delayed_task_traces_.load(), " delegates=", delegates_.size());
+  }
   auto next = std::chrono::nanoseconds::max();
   auto delegates_copy(delegates_);
   for (auto delegate : delegates_copy) {
@@ -181,6 +224,15 @@ void TaskRunnerWindow::ProcessTasks() {
       next = std::min(next, delegate->ProcessTasks());
     }
   }
+  if (trace_delayed_task) {
+    TraceWindowsTextInput(
+        "TaskRunner", "ProcessTasks next_delay_ms=",
+        next == std::chrono::nanoseconds::max()
+            ? -1
+            : std::chrono::duration_cast<std::chrono::milliseconds>(next)
+                  .count(),
+        " active_probes=", active_delayed_task_traces_.load());
+  }
   SetTimer(next);
 }
 
@@ -189,6 +241,15 @@ void TaskRunnerWindow::SetTimer(std::chrono::nanoseconds when) {
   auto remaining_to_max =
       std::chrono::nanoseconds::max() - now.time_since_epoch();
   when = std::min(when, remaining_to_max);
+  if (active_delayed_task_traces_ > 0) {
+    TraceWindowsTextInput(
+        "TaskRunner", "schedule timer delay_ms=",
+        when == std::chrono::nanoseconds::max()
+            ? -1
+            : std::chrono::duration_cast<std::chrono::milliseconds>(when)
+                  .count(),
+        " active_probes=", active_delayed_task_traces_.load());
+  }
   timer_thread_.ScheduleAt(now + when);
 }
 
@@ -219,6 +280,12 @@ TaskRunnerWindow::HandleMessage(UINT const message,
       // After this point, WakeUp() needs to post new message to ensure
       // that the wake-up request is not lost.
       wake_up_posted_ = false;
+      if (active_delayed_task_traces_ > 0) {
+        TraceWindowsTextInput(
+            "TaskRunner", "dispatch WM_NULL active_probes=",
+            active_delayed_task_traces_.load(),
+            " dispatch_thread=", GetCurrentThreadId());
+      }
       ProcessTasks();
       return 0;
   }

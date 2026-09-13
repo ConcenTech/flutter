@@ -69,6 +69,11 @@ class TaskRunnerWindow {
   // Triggers processing delegate tasks on main thread
   void WakeUp();
 
+  // Arms temporary diagnostics for a delayed text-input task. While at least
+  // one probe is active, timer scheduling and wake-up stages are traced.
+  uint64_t BeginDelayedTaskTrace(std::chrono::milliseconds delay);
+  void CompleteDelayedTaskTrace(uint64_t trace_id);
+
   void AddDelegate(Delegate* delegate);
   void RemoveDelegate(Delegate* delegate);
 
@@ -110,6 +115,9 @@ class TaskRunnerWindow {
 
   // Used to prevent posting wake up message when one is already scheduled.
   std::atomic_bool wake_up_posted_ = false;
+
+  std::atomic_uint64_t next_delayed_task_trace_id_ = 0;
+  std::atomic_uint32_t active_delayed_task_traces_ = 0;
 
   FML_DISALLOW_COPY_AND_ASSIGN(TaskRunnerWindow);
 };

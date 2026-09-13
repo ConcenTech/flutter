@@ -7,6 +7,8 @@
 #include <atomic>
 #include <utility>
 
+#include "flutter/shell/platform/windows/windows_text_input_trace.h"
+
 namespace flutter {
 
 TaskRunner::TaskRunner(CurrentTimeProc get_current_time,
@@ -97,7 +99,18 @@ void TaskRunner::PostDelayedTask(TaskClosure closure,
                                  std::chrono::milliseconds delay) {
   Task task;
   task.fire_time = GetCurrentTimeForTask() + delay;
-  task.variant = std::move(closure);
+  if (delay == std::chrono::milliseconds(300) &&
+      IsWindowsTextInputTraceEnabled()) {
+    const uint64_t trace_id =
+        task_runner_window_->BeginDelayedTaskTrace(delay);
+    task.variant = [window = task_runner_window_, trace_id,
+                    closure = std::move(closure)]() mutable {
+      window->CompleteDelayedTaskTrace(trace_id);
+      closure();
+    };
+  } else {
+    task.variant = std::move(closure);
+  }
   EnqueueTask(std::move(task));
 }
 
