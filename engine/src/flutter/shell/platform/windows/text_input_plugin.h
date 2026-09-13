@@ -97,6 +97,11 @@ class TextInputPlugin : public TsfTextStoreDelegate {
                           double x = 0.0,
                           double y = 0.0);
 
+  // Invalidates the pointer gesture for the active view when its HWND loses
+  // focus. Lifecycle show messages after refocus must not reuse a touch from
+  // the previous focus epoch.
+  void OnWindowUnfocused(HWND hwnd);
+
   FlutterPointerDeviceKind last_pointer_kind() const {
     return last_pointer_kind_;
   }
@@ -182,6 +187,10 @@ class TextInputPlugin : public TsfTextStoreDelegate {
 
   // Device kind of the last pointer event. Mouse/unknown does not Display.
   FlutterPointerDeviceKind last_pointer_kind_ = kFlutterPointerDeviceKindMouse;
+
+  // Whether |last_pointer_kind_| was recorded during the current HWND focus
+  // epoch.
+  bool pointer_gesture_is_valid_ = false;
 
   // Incremented to cancel a deferred non-editable TSF document switch.
   uint64_t tsf_focus_generation_ = 0;

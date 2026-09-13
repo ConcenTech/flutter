@@ -969,6 +969,9 @@ void FlutterWindowsView::OnWindowStateEvent(HWND hwnd, WindowStateEvent event) {
   if (event == WindowStateEvent::kUnfocus) {
     TraceWindowsTextInput("window", "unfocus dismisses keyboard hwnd=", hwnd,
                           " view_id=", view_id_);
+    if (TextInputPlugin* text_input = engine_->text_input_plugin()) {
+      text_input->OnWindowUnfocused(hwnd);
+    }
     if (OnScreenKeyboard* keyboard = engine_->on_screen_keyboard()) {
       keyboard->Dismiss(hwnd);
     }

@@ -576,11 +576,21 @@ void TextInputPlugin::SetLastPointerKind(FlutterPointerDeviceKind device_kind,
                                          double x,
                                          double y) {
   last_pointer_kind_ = device_kind;
+  pointer_gesture_is_valid_ = true;
 
   TraceWindowsTextInput(
       "pointer", "down kind=", static_cast<int>(device_kind), " physical=(",
       x, ",", y, ") view_id=", view_id_, " hwnd=", GetClientWindowHandle(),
       " client_attached=", active_model_ != nullptr);
+}
+
+void TextInputPlugin::OnWindowUnfocused(HWND hwnd) {
+  if (hwnd != GetClientWindowHandle()) {
+    return;
+  }
+  pointer_gesture_is_valid_ = false;
+  TraceWindowsTextInput(
+      "policy", "window unfocused; invalidate pointer gesture hwnd=", hwnd);
 }
 
 HWND TextInputPlugin::GetClientWindowHandle() const {
@@ -616,7 +626,8 @@ void TextInputPlugin::MaybeDisplayOnScreenKeyboard() {
     return;
   }
   HWND hwnd = GetClientWindowHandle();
-  const bool touch_or_pen = IsTouchOrPenPointer(last_pointer_kind_);
+  const bool touch_or_pen =
+      pointer_gesture_is_valid_ && IsTouchOrPenPointer(last_pointer_kind_);
   const bool window_has_focus = ClientWindowHasFocus(hwnd);
   if (!touch_or_pen || !window_has_focus) {
     TraceWindowsTextInput("policy", "show ignored touch_or_pen=", touch_or_pen,

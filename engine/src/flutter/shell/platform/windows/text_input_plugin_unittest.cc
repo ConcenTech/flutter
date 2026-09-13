@@ -956,6 +956,31 @@ TEST_F(TextInputPluginTest, ShowWithTouchDisplaysKeyboard) {
   SimulateTextInputMethod(messenger, kShowMethod);
 }
 
+TEST_F(TextInputPluginTest, ShowAfterWindowRefocusNeedsNewPointerGesture) {
+  UseEngineWithView(DummyHwnd());
+
+  TestBinaryMessenger messenger([](const std::string& channel,
+                                   const uint8_t* message, size_t message_size,
+                                   BinaryReply reply) {});
+  NiceMock<MockOnScreenKeyboard> keyboard;
+  TextInputPlugin handler(&messenger, engine(), &keyboard);
+  TextInputPluginModifier modifier(&handler);
+  modifier.SetWindowHasFocus(true);
+
+  handler.SetLastPointerKind(kFlutterPointerDeviceKindTouch);
+  SimulateSetClient(messenger);
+  handler.OnWindowUnfocused(DummyHwnd());
+
+  EXPECT_CALL(keyboard, Display(_)).Times(0);
+  SimulateTextInputMethod(messenger, kShowMethod);
+
+  ::testing::Mock::VerifyAndClearExpectations(&keyboard);
+  handler.SetLastPointerKind(kFlutterPointerDeviceKindTouch);
+
+  EXPECT_CALL(keyboard, Display(DummyHwnd())).Times(1);
+  SimulateTextInputMethod(messenger, kShowMethod);
+}
+
 TEST_F(TextInputPluginTest, ShowWithMouseDoesNotDisplayKeyboard) {
   UseEngineWithView(DummyHwnd());
 
