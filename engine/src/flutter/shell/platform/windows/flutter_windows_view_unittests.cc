@@ -1951,6 +1951,17 @@ TEST(FlutterWindowsViewTest, FirstFrameCallbackSkippedOnFailedSoftwarePresent) {
 
 TEST(FlutterWindowsViewTest, PointerDownRecordsLastPointerKind) {
   std::unique_ptr<FlutterWindowsEngine> engine = GetTestEngine();
+  EngineModifier modifier(engine.get());
+  bool received_pointer_event = false;
+  modifier.embedder_api().SendPointerEvent = MOCK_ENGINE_PROC(
+      SendPointerEvent,
+      [&](FLUTTER_API_SYMBOL(FlutterEngine) /*raw_engine*/,
+          const FlutterPointerEvent* /*events*/, size_t events_count) {
+        EXPECT_EQ(events_count, 1u);
+        received_pointer_event = true;
+        return kSuccess;
+      });
+
   auto window_binding_handler =
       std::make_unique<NiceMock<MockWindowBindingHandler>>();
   std::unique_ptr<FlutterWindowsView> view =
@@ -1961,6 +1972,7 @@ TEST(FlutterWindowsViewTest, PointerDownRecordsLastPointerKind) {
   view->OnPointerDown(10, 10, kFlutterPointerDeviceKindTouch, 0, 1, 0, 0);
   EXPECT_EQ(engine->text_input_plugin()->last_pointer_kind(),
             kFlutterPointerDeviceKindTouch);
+  EXPECT_TRUE(received_pointer_event);
 }
 
 TEST(FlutterWindowsViewTest, UnfocusDismissesOnScreenKeyboard) {
