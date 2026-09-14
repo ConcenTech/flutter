@@ -19,7 +19,6 @@
 
 #include "flutter/fml/logging.h"
 #include "flutter/shell/platform/windows/dpi_utils.h"
-#include "flutter/shell/platform/windows/windows_text_input_trace.h"
 
 namespace flutter {
 
@@ -191,24 +190,17 @@ void OnScreenKeyboardWin::SetVisibilityChangedCallback(
 }
 
 void OnScreenKeyboardWin::Display(HWND hwnd) {
-  TraceWindowsTextInput("InputPane", "Display requested hwnd=", hwnd);
   RequestVisibility(hwnd, true);
 }
 
 void OnScreenKeyboardWin::Dismiss(HWND hwnd) {
   if (!shown_ && !pending_show_ && !show_request_in_flight_) {
-    TraceWindowsTextInput(
-        "InputPane",
-        "Dismiss ignored because keyboard is hidden and no Display is pending");
     return;
   }
-  TraceWindowsTextInput("InputPane", "Dismiss requested hwnd=", hwnd);
   RequestVisibility(hwnd, false);
 }
 
 void OnScreenKeyboardWin::OnClientCleared() {
-  TraceWindowsTextInput("InputPane",
-                        "client cleared; cancel pending Display if present");
   CancelPendingDisplay();
 }
 
@@ -304,16 +296,10 @@ RECT OnScreenKeyboardWin::ComputeWindowRectAboveOcclusion(
 }
 
 void OnScreenKeyboardWin::ApplyVisibility(HWND hwnd, bool show) {
-  TraceWindowsTextInput("InputPane", "apply ", show ? "Display" : "Dismiss",
-                        " hwnd=", hwnd, " generation=", generation_);
   if (hwnd == nullptr || !IsWindow(hwnd)) {
-    TraceWindowsTextInput("InputPane",
-                          "apply ignored because HWND is null or invalid");
     return;
   }
   if (!EnsureInputPane(hwnd) || !pane_session_ || !pane_session_->pane) {
-    TraceWindowsTextInput("InputPane",
-                          "apply ignored because InputPane is unavailable");
     return;
   }
 
@@ -329,10 +315,6 @@ void OnScreenKeyboardWin::ApplyVisibility(HWND hwnd, bool show) {
   if (FAILED(hr)) {
     LogInputPaneFailure(show ? "TryShow" : "TryHide", hr);
   }
-  TraceWindowsTextInput("InputPane", show ? "TryShow" : "TryHide",
-                        " hr=0x", std::hex,
-                        static_cast<unsigned long>(hr), std::dec,
-                        " succeeded=", succeeded != FALSE);
 }
 
 void OnScreenKeyboardWin::NotifyVisibilityChanged() {
@@ -343,29 +325,15 @@ void OnScreenKeyboardWin::NotifyVisibilityChanged() {
 
 void OnScreenKeyboardWin::RequestVisibility(HWND hwnd, bool show) {
   if (hwnd == nullptr) {
-    TraceWindowsTextInput("InputPane", show ? "Display" : "Dismiss",
-                          " ignored because HWND is null");
     return;
   }
 
-  const uint64_t previous_generation = generation_;
-  const bool previous_show = pending_show_;
   pending_hwnd_ = hwnd;
   pending_show_ = show;
   const uint64_t generation = ++generation_;
-  TraceWindowsTextInput(
-      "InputPane", "queue ", show ? "Display" : "Dismiss", " hwnd=", hwnd,
-      " generation=", generation, " supersedes_generation=",
-      previous_generation, " previous_pending_show=", previous_show,
-      " delay_ms=", kDisplayDismissDebounce.count());
   task_runner_->PostDelayedTask(
       [weak = weak_factory_.GetWeakPtr(), generation]() {
         if (!weak || generation != weak->generation_) {
-          if (weak) {
-            TraceWindowsTextInput(
-                "InputPane", "skip superseded request generation=", generation,
-                " current_generation=", weak->generation_);
-          }
           return;
         }
         const bool show = weak->pending_show_;
@@ -380,29 +348,20 @@ void OnScreenKeyboardWin::RequestVisibility(HWND hwnd, bool show) {
 
 void OnScreenKeyboardWin::CancelPendingDisplay() {
   if (!pending_show_) {
-    TraceWindowsTextInput("InputPane",
-                          "no pending Display to cancel");
     return;
   }
-  const uint64_t cancelled_generation = generation_;
   ++generation_;
   pending_show_ = false;
-  TraceWindowsTextInput("InputPane",
-                        "cancel pending Display generation=",
-                        cancelled_generation, " new_generation=", generation_);
 }
 
 bool OnScreenKeyboardWin::EnsureInputPane(HWND hwnd) {
   if (pane_session_ && pane_session_->view_hwnd == hwnd &&
       pane_session_->pane) {
-    TraceWindowsTextInput("InputPane", "reuse session view_hwnd=", hwnd);
     return true;
   }
 
   pane_session_.reset();
   if (!IsWindow(hwnd)) {
-    TraceWindowsTextInput("InputPane",
-                          "cannot create session for invalid hwnd=", hwnd);
     return false;
   }
 
@@ -412,9 +371,6 @@ bool OnScreenKeyboardWin::EnsureInputPane(HWND hwnd) {
     LogInputPaneFailure("GetForWindow", hr);
     return false;
   }
-  TraceWindowsTextInput("InputPane", "GetForWindow succeeded view_hwnd=", hwnd,
-                        " root_hwnd=", RootWindow(hwnd));
-
   auto session = std::make_unique<InputPaneSession>();
   session->view_hwnd = hwnd;
   session->pane = pane;
@@ -445,23 +401,13 @@ bool OnScreenKeyboardWin::EnsureInputPane(HWND hwnd) {
           if (!weak) {
             return;
           }
-          TraceWindowsTextInput(
-              "InputPane", "Showing callback marshalled dip_rect=(",
-              occluded_dip.x, ",", occluded_dip.y, ",", occluded_dip.width,
-              ",", occluded_dip.height, ")");
           HWND view = weak->pane_session_ ? weak->pane_session_->view_hwnd
                                           : weak->pending_hwnd_;
           if (!view || !IsWindow(view)) {
-            TraceWindowsTextInput(
-                "InputPane",
-                "Showing callback ignored because view HWND is invalid");
             return;
           }
           RECT view_client{};
           if (!MapClientRectToScreen(view, &view_client)) {
-            TraceWindowsTextInput(
-                "InputPane",
-                "Showing callback ignored because view rect mapping failed");
             return;
           }
           weak->HandleVisibilityEvent(true, occluded_dip, scale, origin,
@@ -476,8 +422,6 @@ bool OnScreenKeyboardWin::EnsureInputPane(HWND hwnd) {
           if (!weak) {
             return;
           }
-          TraceWindowsTextInput("InputPane",
-                                "Hiding callback marshalled");
           RECT empty{};
           weak->HandleVisibilityEvent(false, DipRect{}, 1.0, POINT{0, 0},
                                       empty);
@@ -665,19 +609,9 @@ void OnScreenKeyboardWin::HandleVisibilityEvent(
       physical_bottom_inset_ =
           ComputeBottomInset(view_client_screen, occluded_physical_screen_);
     }
-    TraceWindowsTextInput(
-        "InputPane", "Showing dip_rect=(", occluded_dip.x, ",",
-        occluded_dip.y, ",", occluded_dip.width, ",", occluded_dip.height,
-        ") dpi_scale=", dpi_scale, " root_origin=(",
-        root_client_origin_screen.x, ",", root_client_origin_screen.y,
-        ") view_client_screen=(", view_client_screen.left, ",",
-        view_client_screen.top, ",", view_client_screen.right, ",",
-        view_client_screen.bottom, ") physical_bottom_inset=",
-        physical_bottom_inset_);
   } else {
     show_request_in_flight_ = false;
     physical_bottom_inset_ = 0.0;
-    TraceWindowsTextInput("InputPane", "Hiding physical_bottom_inset=0");
     const uint64_t geometry_generation = ++geometry_generation_;
     task_runner_->PostDelayedTask(
         [weak = weak_factory_.GetWeakPtr(), geometry_generation]() {

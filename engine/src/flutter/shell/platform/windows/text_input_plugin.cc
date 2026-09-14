@@ -18,7 +18,6 @@
 #include "flutter/shell/platform/windows/flutter_windows_view.h"
 #include "flutter/shell/platform/windows/on_screen_keyboard.h"
 #include "flutter/shell/platform/windows/tsf_bridge.h"
-#include "flutter/shell/platform/windows/windows_text_input_trace.h"
 
 static constexpr char kSetEditingStateMethod[] = "TextInput.setEditingState";
 static constexpr char kClearClientMethod[] = "TextInput.clearClient";
@@ -226,14 +225,6 @@ void TextInputPlugin::HandleMethodCall(
     std::unique_ptr<flutter::MethodResult<rapidjson::Document>> result) {
   const std::string& method = method_call.method_name();
 
-  if (method == kSetClientMethod || method == kShowMethod ||
-      method == kClearClientMethod || method == kHideMethod) {
-    TraceWindowsTextInput(
-        "channel", method, " client_attached=", active_model_ != nullptr,
-        " client_id=", active_model_ ? client_id_ : -1, " view_id=", view_id_,
-        " last_pointer_kind=", static_cast<int>(last_pointer_kind_));
-  }
-
   if (method.compare(kShowMethod) == 0) {
     MaybeDisplayOnScreenKeyboard();
   } else if (method.compare(kHideMethod) == 0) {
@@ -311,8 +302,6 @@ void TextInputPlugin::HandleMethodCall(
     }
     CancelPendingTsfNonEditable();
     active_model_ = std::make_unique<TextInputModel>();
-    TraceWindowsTextInput("channel", "setClient attached client_id=", client_id_,
-                          " view_id=", view_id_, " input_type=", input_type_);
     FocusTsfEditable();
   } else if (method.compare(kSetEditingStateMethod) == 0) {
     if (!method_call.arguments() || method_call.arguments()->IsNull()) {
@@ -437,11 +426,6 @@ void TextInputPlugin::HandleMethodCall(
       editabletext_transform_[i / 4][i % 4] = entry.GetDouble();
       ++i;
     }
-    TraceWindowsTextInput(
-        "channel", "setEditableSizeAndTransform view_id=", view_id_,
-        " transform_origin=(",
-        editabletext_transform_[3][0], ",", editabletext_transform_[3][1],
-        ")");
     Rect transformed_rect = GetCursorRect();
     view->OnCursorRectUpdated(transformed_rect);
     if (tsf_bridge_) {
@@ -549,9 +533,6 @@ void TextInputPlugin::EnterPressed(TextInputModel* model) {
 }
 
 void TextInputPlugin::OnViewRemoved(FlutterViewId view_id) {
-  TraceWindowsTextInput("view", "removed view_id=", view_id,
-                        " active_view_id=", view_id_,
-                        " client_attached=", active_model_ != nullptr);
   if (view_id == kImplicitViewId || view_id_ != view_id) {
     return;
   }
@@ -573,15 +554,10 @@ void TextInputPlugin::OnViewRemoved(FlutterViewId view_id) {
 }
 
 void TextInputPlugin::SetLastPointerKind(FlutterPointerDeviceKind device_kind,
-                                         double x,
-                                         double y) {
+                                         double /*x*/,
+                                         double /*y*/) {
   last_pointer_kind_ = device_kind;
   pointer_gesture_is_valid_ = true;
-
-  TraceWindowsTextInput(
-      "pointer", "down kind=", static_cast<int>(device_kind), " physical=(",
-      x, ",", y, ") view_id=", view_id_, " hwnd=", GetClientWindowHandle(),
-      " client_attached=", active_model_ != nullptr);
 }
 
 void TextInputPlugin::OnWindowUnfocused(HWND hwnd) {
@@ -589,8 +565,6 @@ void TextInputPlugin::OnWindowUnfocused(HWND hwnd) {
     return;
   }
   pointer_gesture_is_valid_ = false;
-  TraceWindowsTextInput(
-      "policy", "window unfocused; invalidate pointer gesture hwnd=", hwnd);
 }
 
 HWND TextInputPlugin::GetClientWindowHandle() const {
@@ -619,10 +593,6 @@ static bool IsTouchOrPenPointer(FlutterPointerDeviceKind kind) {
 
 void TextInputPlugin::MaybeDisplayOnScreenKeyboard() {
   if (on_screen_keyboard_ == nullptr || active_model_ == nullptr) {
-    TraceWindowsTextInput(
-        "policy", "show ignored keyboard_available=",
-        on_screen_keyboard_ != nullptr, " client_attached=",
-        active_model_ != nullptr);
     return;
   }
   HWND hwnd = GetClientWindowHandle();
@@ -630,65 +600,46 @@ void TextInputPlugin::MaybeDisplayOnScreenKeyboard() {
       pointer_gesture_is_valid_ && IsTouchOrPenPointer(last_pointer_kind_);
   const bool window_has_focus = ClientWindowHasFocus(hwnd);
   if (!touch_or_pen || !window_has_focus) {
-    TraceWindowsTextInput("policy", "show ignored touch_or_pen=", touch_or_pen,
-                          " hwnd=", hwnd,
-                          " window_has_focus=", window_has_focus);
     return;
   }
-  TraceWindowsTextInput("policy", "show requests Display hwnd=", hwnd);
   on_screen_keyboard_->Display(hwnd);
 }
 
 void TextInputPlugin::MaybeDismissOnScreenKeyboard() {
   if (active_model_ != nullptr) {
-    TraceWindowsTextInput("policy",
-                          "hide ignored because client remains attached");
     return;
   }
-  TraceWindowsTextInput("policy", "hide requests Dismiss");
   DismissOnScreenKeyboard();
 }
 
 void TextInputPlugin::DismissOnScreenKeyboard() {
   if (on_screen_keyboard_ == nullptr) {
-    TraceWindowsTextInput("policy",
-                          "Dismiss ignored because keyboard is unavailable");
     return;
   }
   HWND hwnd = GetClientWindowHandle();
-  TraceWindowsTextInput("policy", "Dismiss hwnd=", hwnd);
   on_screen_keyboard_->Dismiss(hwnd);
 }
 
 void TextInputPlugin::FocusTsfEditable() {
   CancelPendingTsfNonEditable();
   if (tsf_bridge_ == nullptr) {
-    TraceWindowsTextInput("policy",
-                          "editable TSF focus skipped; bridge unavailable");
     return;
   }
   HWND hwnd = GetClientWindowHandle();
-  TraceWindowsTextInput("policy", "focus editable TSF hwnd=", hwnd);
   tsf_bridge_->FocusEditable(hwnd, this);
 }
 
 void TextInputPlugin::FocusTsfNonEditable() {
   if (tsf_bridge_ == nullptr) {
-    TraceWindowsTextInput("policy",
-                          "non-editable TSF focus skipped; bridge unavailable");
     return;
   }
   HWND hwnd = GetClientWindowHandle();
-  TraceWindowsTextInput("policy",
-                        "abort composition and focus non-editable TSF hwnd=",
-                        hwnd);
   tsf_bridge_->AbortComposition();
   tsf_bridge_->FocusNonEditable(hwnd);
 }
 
 void TextInputPlugin::AbortTsfComposition() {
   if (tsf_bridge_ != nullptr) {
-    TraceWindowsTextInput("policy", "abort TSF composition");
     tsf_bridge_->AbortComposition();
   }
 }
@@ -699,17 +650,12 @@ void TextInputPlugin::ScheduleTsfNonEditable() {
   }
   const HWND hwnd = GetClientWindowHandle();
   const uint64_t generation = ++tsf_focus_generation_;
-  TraceWindowsTextInput("policy", "queue non-editable TSF focus hwnd=", hwnd,
-                        " generation=", generation,
-                        " delay_ms=", kTsfFocusDebounce.count());
   engine_->task_runner()->PostDelayedTask(
       [weak = weak_factory_.GetWeakPtr(), generation, hwnd]() {
         if (!weak || generation != weak->tsf_focus_generation_ ||
             weak->active_model_ != nullptr) {
           return;
         }
-        TraceWindowsTextInput("policy", "apply non-editable TSF focus hwnd=",
-                              hwnd, " generation=", generation);
         weak->tsf_bridge_->FocusNonEditable(hwnd);
       },
       kTsfFocusDebounce);

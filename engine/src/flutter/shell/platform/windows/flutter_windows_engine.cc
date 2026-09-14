@@ -28,7 +28,6 @@
 #include "flutter/shell/platform/windows/system_utils.h"
 #include "flutter/shell/platform/windows/task_runner.h"
 #include "flutter/shell/platform/windows/tsf_bridge.h"
-#include "flutter/shell/platform/windows/windows_text_input_trace.h"
 #include "flutter/shell/platform/windows/window_manager.h"
 #include "flutter/third_party/accessibility/ax/ax_node.h"
 #include "shell/platform/windows/flutter_project_bundle.h"
@@ -1021,8 +1020,6 @@ std::unique_ptr<TsfBridge> FlutterWindowsEngine::CreateTsfBridge() {
 void FlutterWindowsEngine::OnOnScreenKeyboardVisibilityChanged(
     bool shown,
     double physical_bottom_inset) {
-  TraceWindowsTextInput("engine", "keyboard visibility changed shown=", shown,
-                        " physical_bottom_inset=", physical_bottom_inset);
   std::vector<FlutterWindowsView*> views;
   {
     std::shared_lock read_lock(views_mutex_);

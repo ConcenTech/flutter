@@ -16,7 +16,6 @@
 #include "flutter/shell/platform/windows/on_screen_keyboard.h"
 #include "flutter/shell/platform/windows/text_input_plugin.h"
 #include "flutter/shell/platform/windows/tsf_bridge.h"
-#include "flutter/shell/platform/windows/windows_text_input_trace.h"
 #include "flutter/third_party/accessibility/ax/platform/ax_platform_node_win.h"
 
 namespace flutter {
@@ -457,11 +456,6 @@ void FlutterWindowsView::SendWindowMetrics(size_t width,
   event.physical_view_inset_left = 0.0;
   event.physical_view_inset_bottom =
       ClampedKeyboardBottomInset(engine_, height);
-  TraceWindowsTextInput("metrics", "send view_id=", view_id_, " hwnd=",
-                        GetWindowHandle(), " size=", width, "x", height,
-                        " pixel_ratio=", pixel_ratio,
-                        " physical_bottom_inset=",
-                        event.physical_view_inset_bottom);
   engine_->SendWindowMetricsEvent(event);
 }
 
@@ -492,11 +486,6 @@ FlutterWindowMetricsEvent FlutterWindowsView::CreateWindowMetricsEvent() const {
   event.physical_view_inset_left = 0.0;
   event.physical_view_inset_bottom =
       ClampedKeyboardBottomInset(engine_, event.height);
-  TraceWindowsTextInput("metrics", "create view_id=", view_id_, " hwnd=",
-                        GetWindowHandle(), " size=", event.width, "x",
-                        event.height, " pixel_ratio=", event.pixel_ratio,
-                        " physical_bottom_inset=",
-                        event.physical_view_inset_bottom);
 
   return event;
 }
@@ -967,8 +956,6 @@ void FlutterWindowsView::OnDwmCompositionChanged() {
 
 void FlutterWindowsView::OnWindowStateEvent(HWND hwnd, WindowStateEvent event) {
   if (event == WindowStateEvent::kUnfocus) {
-    TraceWindowsTextInput("window", "unfocus dismisses keyboard hwnd=", hwnd,
-                          " view_id=", view_id_);
     if (TextInputPlugin* text_input = engine_->text_input_plugin()) {
       text_input->OnWindowUnfocused(hwnd);
     }
