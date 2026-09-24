@@ -110,7 +110,9 @@ class OnScreenKeyboardWin : public OnScreenKeyboard {
   static constexpr std::chrono::milliseconds kDisplayDismissDebounce{300};
 
   // |task_runner| must outlive this object and is used to debounce
-  // Display/Dismiss and to marshal InputPane events onto the platform thread.
+  // Display/Dismiss and geometry updates, and to marshal WinEvent callbacks
+  // onto the platform thread. InputPane Showing/Hiding run on the platform
+  // STA and invoke HandleVisibilityEvent synchronously.
   explicit OnScreenKeyboardWin(TaskRunner* task_runner);
 
   // Creates an instance using injected Win32 operations.
