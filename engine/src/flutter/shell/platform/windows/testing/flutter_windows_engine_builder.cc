@@ -5,6 +5,8 @@
 #include "flutter/shell/platform/windows/testing/flutter_windows_engine_builder.h"
 
 #include "flutter/fml/macros.h"
+#include "flutter/shell/platform/windows/testing/mock_on_screen_keyboard.h"
+#include "flutter/shell/platform/windows/testing/mock_tsf_bridge.h"
 #include "flutter/shell/platform/windows/windows_proc_table.h"
 
 namespace flutter {
@@ -25,7 +27,8 @@ class TestFlutterWindowsEngine : public FlutterWindowsEngine {
   std::unique_ptr<KeyboardHandlerBase> CreateKeyboardKeyHandler(
       BinaryMessenger* messenger,
       KeyboardKeyEmbedderHandler::GetKeyStateHandler get_key_state,
-      KeyboardKeyEmbedderHandler::MapVirtualKeyToScanCode map_vk_to_scan) {
+      KeyboardKeyEmbedderHandler::MapVirtualKeyToScanCode map_vk_to_scan)
+      override {
     if (get_key_state_) {
       get_key_state = get_key_state_;
     }
@@ -36,6 +39,14 @@ class TestFlutterWindowsEngine : public FlutterWindowsEngine {
 
     return FlutterWindowsEngine::CreateKeyboardKeyHandler(
         messenger, get_key_state, map_vk_to_scan);
+  }
+
+  std::unique_ptr<OnScreenKeyboard> CreateOnScreenKeyboard() override {
+    return std::make_unique<::testing::NiceMock<MockOnScreenKeyboard>>();
+  }
+
+  std::unique_ptr<TsfBridge> CreateTsfBridge() override {
+    return std::make_unique<::testing::NiceMock<MockTsfBridge>>();
   }
 
  private:
@@ -59,6 +70,11 @@ FlutterWindowsEngineBuilder::~FlutterWindowsEngineBuilder() = default;
 void FlutterWindowsEngineBuilder::SetDartEntrypoint(std::string entrypoint) {
   dart_entrypoint_ = std::move(entrypoint);
   properties_.dart_entrypoint = dart_entrypoint_.c_str();
+}
+
+void FlutterWindowsEngineBuilder::SetAotLibraryPath(std::wstring path) {
+  aot_library_path_ = std::move(path);
+  properties_.aot_library_path = aot_library_path_.c_str();
 }
 
 void FlutterWindowsEngineBuilder::AddDartEntrypointArgument(std::string arg) {

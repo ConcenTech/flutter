@@ -24,6 +24,7 @@
 #include "flutter/shell/platform/windows/testing/egl/mock_manager.h"
 #include "flutter/shell/platform/windows/testing/egl/mock_window_surface.h"
 #include "flutter/shell/platform/windows/testing/engine_modifier.h"
+#include "flutter/shell/platform/windows/testing/mock_on_screen_keyboard.h"
 #include "flutter/shell/platform/windows/testing/mock_window_binding_handler.h"
 #include "flutter/shell/platform/windows/testing/mock_windows_proc_table.h"
 #include "flutter/shell/platform/windows/testing/test_keyboard.h"
@@ -197,7 +198,8 @@ TEST(FlutterWindowsViewTest, SubMenuExpandedState) {
       std::make_unique<NiceMock<MockWindowBindingHandler>>();
   std::unique_ptr<FlutterWindowsView> view =
       engine->CreateView(std::move(window_binding_handler),
-                         /*is_sized_to_content=*/false, BoxConstraints());
+                         /*is_sized_to_content=*/false, BoxConstraints(),
+                         /*allow_implicit_view=*/true);
 
   // Enable semantics to instantiate accessibility bridge.
   view->OnUpdateSemanticsEnabled(true);
@@ -326,7 +328,7 @@ TEST(FlutterWindowsViewTest, Shutdown) {
     EXPECT_CALL(render_context, ClearCurrent).WillOnce(Return(true));
 
     view = engine->CreateView(std::move(window_binding_handler), false,
-                              BoxConstraints());
+                              BoxConstraints(), /*allow_implicit_view=*/true);
   }
 
   // The view must be removed before the surface can be destroyed.
@@ -353,7 +355,8 @@ TEST(FlutterWindowsViewTest, KeySequence) {
 
   std::unique_ptr<FlutterWindowsView> view =
       engine->CreateView(std::make_unique<NiceMock<MockWindowBindingHandler>>(),
-                         /*is_sized_to_content=*/false, BoxConstraints());
+                         /*is_sized_to_content=*/false, BoxConstraints(),
+                         /*allow_implicit_view=*/true);
 
   view->OnKey(kVirtualKeyA, kScanCodeKeyA, WM_KEYDOWN, 'a', false, false,
               [](bool handled) {});
@@ -370,7 +373,8 @@ TEST(FlutterWindowsViewTest, KeyEventCallback) {
 
   std::unique_ptr<FlutterWindowsView> view =
       engine->CreateView(std::make_unique<NiceMock<MockWindowBindingHandler>>(),
-                         /*is_sized_to_content=*/false, BoxConstraints());
+                         /*is_sized_to_content=*/false, BoxConstraints(),
+                         /*allow_implicit_view=*/true);
 
   class MockCallback {
    public:
@@ -412,7 +416,8 @@ TEST(FlutterWindowsViewTest, EnableSemantics) {
       std::make_unique<NiceMock<MockWindowBindingHandler>>();
   std::unique_ptr<FlutterWindowsView> view =
       engine->CreateView(std::move(window_binding_handler),
-                         /*is_sized_to_content=*/false, BoxConstraints());
+                         /*is_sized_to_content=*/false, BoxConstraints(),
+                         /*allow_implicit_view=*/true);
 
   view->OnUpdateSemanticsEnabled(true);
   EXPECT_TRUE(semantics_enabled);
@@ -430,7 +435,8 @@ TEST(FlutterWindowsViewTest, AddSemanticsNodeUpdate) {
       std::make_unique<NiceMock<MockWindowBindingHandler>>();
   std::unique_ptr<FlutterWindowsView> view =
       engine->CreateView(std::move(window_binding_handler),
-                         /*is_sized_to_content=*/false, BoxConstraints());
+                         /*is_sized_to_content=*/false, BoxConstraints(),
+                         /*allow_implicit_view=*/true);
 
   // Enable semantics to instantiate accessibility bridge.
   view->OnUpdateSemanticsEnabled(true);
@@ -530,7 +536,8 @@ TEST(FlutterWindowsViewTest, AddSemanticsNodeUpdateWithChildren) {
 
   std::unique_ptr<FlutterWindowsView> view =
       engine->CreateView(std::make_unique<NiceMock<MockWindowBindingHandler>>(),
-                         /*is_sized_to_content=*/false, BoxConstraints());
+                         /*is_sized_to_content=*/false, BoxConstraints(),
+                         /*allow_implicit_view=*/true);
 
   // Enable semantics to instantiate accessibility bridge.
   view->OnUpdateSemanticsEnabled(true);
@@ -732,7 +739,8 @@ TEST(FlutterWindowsViewTest, NonZeroSemanticsRoot) {
 
   std::unique_ptr<FlutterWindowsView> view =
       engine->CreateView(std::make_unique<NiceMock<MockWindowBindingHandler>>(),
-                         /*is_sized_to_content=*/false, BoxConstraints());
+                         /*is_sized_to_content=*/false, BoxConstraints(),
+                         /*allow_implicit_view=*/true);
 
   // Enable semantics to instantiate accessibility bridge.
   view->OnUpdateSemanticsEnabled(true);
@@ -865,7 +873,8 @@ TEST(FlutterWindowsViewTest, AccessibilityHitTesting) {
 
   std::unique_ptr<FlutterWindowsView> view =
       engine->CreateView(std::make_unique<NiceMock<MockWindowBindingHandler>>(),
-                         /*is_sized_to_content=*/false, BoxConstraints());
+                         /*is_sized_to_content=*/false, BoxConstraints(),
+                         /*allow_implicit_view=*/true);
 
   // Enable semantics to instantiate accessibility bridge.
   view->OnUpdateSemanticsEnabled(true);
@@ -994,7 +1003,8 @@ TEST(FlutterWindowsViewTest, WindowResizeTests) {
 
   std::unique_ptr<FlutterWindowsView> view =
       engine->CreateView(std::make_unique<NiceMock<MockWindowBindingHandler>>(),
-                         /*is_sized_to_content=*/false, BoxConstraints());
+                         /*is_sized_to_content=*/false, BoxConstraints(),
+                         /*allow_implicit_view=*/true);
 
   fml::AutoResetWaitableEvent metrics_sent_latch;
   engine_modifier.embedder_api().SendWindowMetricsEvent = MOCK_ENGINE_PROC(
@@ -1062,7 +1072,8 @@ TEST(FlutterWindowsViewTest, TestEmptyFrameResizes) {
 
   std::unique_ptr<FlutterWindowsView> view =
       engine->CreateView(std::make_unique<NiceMock<MockWindowBindingHandler>>(),
-                         /*is_sized_to_content=*/false, BoxConstraints());
+                         /*is_sized_to_content=*/false, BoxConstraints(),
+                         /*allow_implicit_view=*/true);
 
   ViewModifier view_modifier{view.get()};
   engine_modifier.SetEGLManager(std::move(egl_manager));
@@ -1105,7 +1116,8 @@ TEST(FlutterWindowsViewTest, WindowResizeRace) {
 
   std::unique_ptr<FlutterWindowsView> view =
       engine->CreateView(std::make_unique<NiceMock<MockWindowBindingHandler>>(),
-                         /*is_sized_to_content=*/false, BoxConstraints());
+                         /*is_sized_to_content=*/false, BoxConstraints(),
+                         /*allow_implicit_view=*/true);
 
   ViewModifier view_modifier{view.get()};
   engine_modifier.SetEGLManager(std::move(egl_manager));
@@ -1146,7 +1158,8 @@ TEST(FlutterWindowsViewTest, WindowResizeInvalidSurface) {
 
   std::unique_ptr<FlutterWindowsView> view =
       engine->CreateView(std::make_unique<NiceMock<MockWindowBindingHandler>>(),
-                         /*is_sized_to_content=*/false, BoxConstraints());
+                         /*is_sized_to_content=*/false, BoxConstraints(),
+                         /*allow_implicit_view=*/true);
 
   ViewModifier view_modifier{view.get()};
   engine_modifier.SetEGLManager(std::move(egl_manager));
@@ -1175,7 +1188,8 @@ TEST(FlutterWindowsViewTest, WindowResizeWithoutSurface) {
 
   std::unique_ptr<FlutterWindowsView> view =
       engine->CreateView(std::make_unique<NiceMock<MockWindowBindingHandler>>(),
-                         /*is_sized_to_content=*/false, BoxConstraints());
+                         /*is_sized_to_content=*/false, BoxConstraints(),
+                         /*allow_implicit_view=*/true);
 
   modifier.SetEGLManager(std::move(egl_manager));
 
@@ -1226,7 +1240,8 @@ TEST(FlutterWindowsViewTest, CheckboxNativeState) {
 
   std::unique_ptr<FlutterWindowsView> view =
       engine->CreateView(std::make_unique<NiceMock<MockWindowBindingHandler>>(),
-                         /*is_sized_to_content=*/false, BoxConstraints());
+                         /*is_sized_to_content=*/false, BoxConstraints(),
+                         /*allow_implicit_view=*/true);
 
   // Enable semantics to instantiate accessibility bridge.
   view->OnUpdateSemanticsEnabled(true);
@@ -1375,7 +1390,8 @@ TEST(FlutterWindowsViewTest, SwitchNativeState) {
 
   std::unique_ptr<FlutterWindowsView> view =
       engine->CreateView(std::make_unique<NiceMock<MockWindowBindingHandler>>(),
-                         /*is_sized_to_content=*/false, BoxConstraints());
+                         /*is_sized_to_content=*/false, BoxConstraints(),
+                         /*allow_implicit_view=*/true);
 
   // Enable semantics to instantiate accessibility bridge.
   view->OnUpdateSemanticsEnabled(true);
@@ -1498,7 +1514,8 @@ TEST(FlutterWindowsViewTest, TooltipNodeData) {
 
   std::unique_ptr<FlutterWindowsView> view =
       engine->CreateView(std::make_unique<NiceMock<MockWindowBindingHandler>>(),
-                         /*is_sized_to_content=*/false, BoxConstraints());
+                         /*is_sized_to_content=*/false, BoxConstraints(),
+                         /*allow_implicit_view=*/true);
 
   // Enable semantics to instantiate accessibility bridge.
   view->OnUpdateSemanticsEnabled(true);
@@ -1580,7 +1597,8 @@ TEST(FlutterWindowsViewTest, DisablesVSyncAtStartup) {
 
   std::unique_ptr<FlutterWindowsView> view =
       engine->CreateView(std::make_unique<NiceMock<MockWindowBindingHandler>>(),
-                         /*is_sized_to_content=*/false, BoxConstraints());
+                         /*is_sized_to_content=*/false, BoxConstraints(),
+                         /*allow_implicit_view=*/true);
 }
 
 // Blocks until the v-blank if it is enabled by the window.
@@ -1616,7 +1634,8 @@ TEST(FlutterWindowsViewTest, EnablesVSyncAtStartup) {
 
   std::unique_ptr<FlutterWindowsView> view =
       engine->CreateView(std::make_unique<NiceMock<MockWindowBindingHandler>>(),
-                         /*is_sized_to_content=*/false, BoxConstraints());
+                         /*is_sized_to_content=*/false, BoxConstraints(),
+                         /*allow_implicit_view=*/true);
 }
 
 // Don't block until the v-blank if it is disabled by the window.
@@ -1660,7 +1679,8 @@ TEST(FlutterWindowsViewTest, DisablesVSyncAfterStartup) {
 
   std::unique_ptr<FlutterWindowsView> view =
       engine->CreateView(std::make_unique<NiceMock<MockWindowBindingHandler>>(),
-                         /*is_sized_to_content=*/false, BoxConstraints());
+                         /*is_sized_to_content=*/false, BoxConstraints(),
+                         /*allow_implicit_view=*/true);
 }
 
 // Blocks until the v-blank if it is enabled by the window.
@@ -1707,7 +1727,8 @@ TEST(FlutterWindowsViewTest, EnablesVSyncAfterStartup) {
 
   std::unique_ptr<FlutterWindowsView> view =
       engine->CreateView(std::make_unique<NiceMock<MockWindowBindingHandler>>(),
-                         /*is_sized_to_content=*/false, BoxConstraints());
+                         /*is_sized_to_content=*/false, BoxConstraints(),
+                         /*allow_implicit_view=*/true);
 }
 
 // Desktop Window Manager composition can be disabled on Windows 7.
@@ -1753,7 +1774,8 @@ TEST(FlutterWindowsViewTest, UpdatesVSyncOnDwmUpdates) {
 
     view = engine->CreateView(
         std::make_unique<NiceMock<MockWindowBindingHandler>>(), false,
-        BoxConstraints());
+        BoxConstraints(),
+        /*allow_implicit_view=*/true);
   }
 
   // Disabling DWM composition should enable vsync blocking on the surface.
@@ -1782,7 +1804,8 @@ TEST(FlutterWindowsViewTest, FocusTriggersWindowFocus) {
   EXPECT_CALL(*window_binding_handler, Focus()).WillOnce(Return(true));
   std::unique_ptr<FlutterWindowsView> view =
       engine->CreateView(std::move(window_binding_handler),
-                         /*is_sized_to_content=*/false, BoxConstraints());
+                         /*is_sized_to_content=*/false, BoxConstraints(),
+                         /*allow_implicit_view=*/true);
   EXPECT_TRUE(view->Focus());
 }
 
@@ -1792,7 +1815,8 @@ TEST(FlutterWindowsViewTest, OnFocusTriggersSendFocusViewEvent) {
       std::make_unique<NiceMock<MockWindowBindingHandler>>();
   std::unique_ptr<FlutterWindowsView> view =
       engine->CreateView(std::move(window_binding_handler),
-                         /*is_sized_to_content=*/false, BoxConstraints());
+                         /*is_sized_to_content=*/false, BoxConstraints(),
+                         /*allow_implicit_view=*/true);
 
   EngineModifier modifier(engine.get());
   bool received_focus_event = false;
@@ -1859,7 +1883,8 @@ TEST(FlutterWindowsViewTest, FirstFrameCallbackFiresOnFramePresented) {
 
   std::unique_ptr<FlutterWindowsView> view =
       engine->CreateView(std::make_unique<NiceMock<MockWindowBindingHandler>>(),
-                         /*is_sized_to_content=*/false, BoxConstraints());
+                         /*is_sized_to_content=*/false, BoxConstraints(),
+                         /*allow_implicit_view=*/true);
 
   bool callback_fired = false;
   view->SetFirstFrameCallback([&callback_fired]() { callback_fired = true; });
@@ -1886,7 +1911,8 @@ TEST(FlutterWindowsViewTest, FirstFrameCallbackFiresOnSoftwareBitmapPresent) {
 
   std::unique_ptr<FlutterWindowsView> view =
       engine->CreateView(std::move(window_binding_handler),
-                         /*is_sized_to_content=*/false, BoxConstraints());
+                         /*is_sized_to_content=*/false, BoxConstraints(),
+                         /*allow_implicit_view=*/true);
 
   bool callback_fired = false;
   view->SetFirstFrameCallback([&callback_fired]() { callback_fired = true; });
@@ -1908,7 +1934,8 @@ TEST(FlutterWindowsViewTest, FirstFrameCallbackFiresOnlyOnce) {
 
   std::unique_ptr<FlutterWindowsView> view =
       engine->CreateView(std::make_unique<NiceMock<MockWindowBindingHandler>>(),
-                         /*is_sized_to_content=*/false, BoxConstraints());
+                         /*is_sized_to_content=*/false, BoxConstraints(),
+                         /*allow_implicit_view=*/true);
 
   int callback_count = 0;
   view->SetFirstFrameCallback([&callback_count]() { callback_count++; });
@@ -1935,7 +1962,8 @@ TEST(FlutterWindowsViewTest, FirstFrameCallbackSkippedOnFailedSoftwarePresent) {
 
   std::unique_ptr<FlutterWindowsView> view =
       engine->CreateView(std::move(window_binding_handler),
-                         /*is_sized_to_content=*/false, BoxConstraints());
+                         /*is_sized_to_content=*/false, BoxConstraints(),
+                         /*allow_implicit_view=*/true);
 
   bool callback_fired = false;
   view->SetFirstFrameCallback([&callback_fired]() { callback_fired = true; });
@@ -1946,6 +1974,127 @@ TEST(FlutterWindowsViewTest, FirstFrameCallbackSkippedOnFailedSoftwarePresent) {
   engine->task_runner()->ProcessTasks();
 
   EXPECT_FALSE(callback_fired);
+}
+
+TEST(FlutterWindowsViewTest, PointerDownRecordsLastPointerKind) {
+  std::unique_ptr<FlutterWindowsEngine> engine = GetTestEngine();
+  EngineModifier modifier(engine.get());
+  bool received_pointer_event = false;
+  modifier.embedder_api().SendPointerEvent = MOCK_ENGINE_PROC(
+      SendPointerEvent,
+      [&](FLUTTER_API_SYMBOL(FlutterEngine) /*raw_engine*/,
+          const FlutterPointerEvent* /*events*/, size_t events_count) {
+        EXPECT_EQ(events_count, 1u);
+        received_pointer_event = true;
+        return kSuccess;
+      });
+
+  auto window_binding_handler =
+      std::make_unique<NiceMock<MockWindowBindingHandler>>();
+  std::unique_ptr<FlutterWindowsView> view =
+      engine->CreateView(std::move(window_binding_handler),
+                         /*is_sized_to_content=*/false, BoxConstraints(),
+                         /*allow_implicit_view=*/true);
+
+  ASSERT_NE(engine->text_input_plugin(), nullptr);
+  view->OnPointerDown(10, 10, kFlutterPointerDeviceKindTouch, 0, 1, 0, 0);
+  EXPECT_EQ(engine->text_input_plugin()->last_pointer_kind(),
+            kFlutterPointerDeviceKindTouch);
+  EXPECT_TRUE(received_pointer_event);
+}
+
+TEST(FlutterWindowsViewTest, UnfocusDismissesOnScreenKeyboard) {
+  std::unique_ptr<FlutterWindowsEngine> engine = GetTestEngine();
+  EngineModifier modifier(engine.get());
+
+  auto keyboard = std::make_unique<NiceMock<MockOnScreenKeyboard>>();
+  MockOnScreenKeyboard* keyboard_ptr = keyboard.get();
+  modifier.SetOnScreenKeyboard(std::move(keyboard));
+
+  auto window_binding_handler =
+      std::make_unique<NiceMock<MockWindowBindingHandler>>();
+  std::unique_ptr<FlutterWindowsView> view =
+      engine->CreateView(std::move(window_binding_handler),
+                         /*is_sized_to_content=*/false, BoxConstraints(),
+                         /*allow_implicit_view=*/true);
+
+  HWND hwnd = reinterpret_cast<HWND>(1);
+  EXPECT_CALL(*keyboard_ptr, Dismiss(hwnd)).Times(1);
+  view->OnWindowStateEvent(hwnd, WindowStateEvent::kUnfocus);
+}
+
+TEST(FlutterWindowsViewTest, WindowMetricsIncludeKeyboardBottomInset) {
+  std::unique_ptr<FlutterWindowsEngine> engine = GetTestEngine();
+  EngineModifier modifier(engine.get());
+
+  auto keyboard = std::make_unique<NiceMock<MockOnScreenKeyboard>>();
+  ON_CALL(*keyboard, physical_bottom_inset()).WillByDefault(Return(120.0));
+  modifier.SetOnScreenKeyboard(std::move(keyboard));
+
+  auto window_binding_handler =
+      std::make_unique<NiceMock<MockWindowBindingHandler>>();
+  EXPECT_CALL(*window_binding_handler, GetPhysicalWindowBounds)
+      .WillRepeatedly(Return(PhysicalWindowBounds{800, 600}));
+  FlutterWindowsView view{kImplicitViewId, engine.get(),
+                          std::move(window_binding_handler), false,
+                          BoxConstraints()};
+
+  FlutterWindowMetricsEvent event = view.CreateWindowMetricsEvent();
+  EXPECT_EQ(event.physical_view_inset_bottom, 120.0);
+  EXPECT_EQ(event.physical_view_inset_top, 0.0);
+  EXPECT_EQ(event.physical_view_inset_left, 0.0);
+  EXPECT_EQ(event.physical_view_inset_right, 0.0);
+}
+
+TEST(FlutterWindowsViewTest, KeyboardBottomInsetIsClampedToHeight) {
+  std::unique_ptr<FlutterWindowsEngine> engine = GetTestEngine();
+  EngineModifier modifier(engine.get());
+
+  auto keyboard = std::make_unique<NiceMock<MockOnScreenKeyboard>>();
+  ON_CALL(*keyboard, physical_bottom_inset()).WillByDefault(Return(9999.0));
+  modifier.SetOnScreenKeyboard(std::move(keyboard));
+
+  auto window_binding_handler =
+      std::make_unique<NiceMock<MockWindowBindingHandler>>();
+  EXPECT_CALL(*window_binding_handler, GetPhysicalWindowBounds)
+      .WillRepeatedly(Return(PhysicalWindowBounds{400, 200}));
+  FlutterWindowsView view{kImplicitViewId, engine.get(),
+                          std::move(window_binding_handler), false,
+                          BoxConstraints()};
+
+  FlutterWindowMetricsEvent event = view.CreateWindowMetricsEvent();
+  EXPECT_EQ(event.physical_view_inset_bottom, 200.0);
+}
+
+TEST(FlutterWindowsViewTest, KeyboardVisibilityChangeResendsWindowMetrics) {
+  std::unique_ptr<FlutterWindowsEngine> engine = GetTestEngine();
+  EngineModifier modifier(engine.get());
+
+  auto keyboard = std::make_unique<NiceMock<MockOnScreenKeyboard>>();
+  ON_CALL(*keyboard, physical_bottom_inset()).WillByDefault(Return(80.0));
+  modifier.SetOnScreenKeyboard(std::move(keyboard));
+
+  auto window_binding_handler =
+      std::make_unique<NiceMock<MockWindowBindingHandler>>();
+  EXPECT_CALL(*window_binding_handler, GetPhysicalWindowBounds)
+      .WillRepeatedly(Return(PhysicalWindowBounds{800, 600}));
+  std::unique_ptr<FlutterWindowsView> view =
+      engine->CreateView(std::move(window_binding_handler),
+                         /*is_sized_to_content=*/false, BoxConstraints(),
+                         /*allow_implicit_view=*/true);
+
+  bool received_metrics = false;
+  modifier.embedder_api().SendWindowMetricsEvent = MOCK_ENGINE_PROC(
+      SendWindowMetricsEvent,
+      ([&received_metrics](auto engine,
+                           const FlutterWindowMetricsEvent* event) {
+        received_metrics = true;
+        EXPECT_EQ(event->physical_view_inset_bottom, 80.0);
+        return kSuccess;
+      }));
+
+  modifier.OnOnScreenKeyboardVisibilityChanged();
+  EXPECT_TRUE(received_metrics);
 }
 
 }  // namespace testing
